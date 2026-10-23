@@ -1,18 +1,30 @@
-/* Chart palette: categorical slots stepped separately for light and dark surfaces. */
+/* "Quantitative Archive" tokens — keep in sync with src/theme.ts. See DESIGN.md. */
 :root {
-  --series-1: #2a78d6; /* blue — income, values */
-  --series-2: #eb6834; /* orange — expenses */
-  --series-3: #1baf7a; /* aqua */
-  --delta-up: #006300;
-  --delta-down: #d03b3b;
+  --surface: #10131a;
+  --surface-container-low: #191c22;
+  --surface-container: #1d2026;
+  --surface-container-high: #272a31;
+  --surface-container-highest: #32353c;
+  --outline-variant: #3c494e;
+  --on-primary: #003543;
+  --primary: #4cd6ff;
+  --primary-container: #009dc1;
+
+  /* Chart palette. --trend is the single-series line (DESIGN.md: primary blue).
+     --series-1/2 are the validated income/expenses pair on surface_container_high:
+     primary itself is too light to sit beside a second hue. */
+  --trend: var(--primary);
+  --series-1: #009dc1; /* income, values */
+  --series-2: #d9762b; /* expenses */
+  --delta-up: #40e56c; /* secondary */
+  --delta-down: #ff5353; /* tertiary_container */
+
+  --font-heading: 'Manrope Variable', system-ui, sans-serif;
+  --section-gap: 2rem;
 }
 
-[data-mantine-color-scheme='dark'] {
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --delta-up: #0ca30c;
-  --delta-down: #e66767;
+body {
+  background: var(--surface);
 }
 
 .num {
@@ -25,4 +37,135 @@
 
 .delta-down {
   color: var(--delta-down);
+}
+
+/* label-sm: metadata labels like "NET WORTH". */
+.label-sm {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+}
+
+.headline {
+  font-family: var(--font-heading);
+}
+
+/* Layering: cards (high) sit on the page (surface); the sidebar is low. */
+.mantine-Card-root,
+.mantine-Paper-root:not(.mantine-Modal-content):not(.mantine-Popover-dropdown) {
+  background-color: var(--surface-container-high);
+}
+
+.mantine-AppShell-navbar,
+.mantine-AppShell-header {
+  background-color: var(--surface-container-low);
+}
+
+/* Primary CTA: gradient with dark on_primary text so it stays legible. */
+.mantine-Button-root[data-variant='gradient'] {
+  --button-color: var(--on-primary);
+  font-weight: 700;
+}
+
+.mantine-Button-root[data-variant='gradient']:disabled,
+.mantine-Button-root[data-variant='gradient'][data-disabled] {
+  background: var(--surface-container-highest);
+  color: var(--mantine-color-dark-3);
+}
+
+/* Secondary: ghost — no fill or border, surface_variant on hover. */
+.mantine-Button-root[data-variant='default'],
+.mantine-ActionIcon-root[data-variant='default'] {
+  --button-bg: transparent;
+  --button-bd: none;
+  --ai-bg: transparent;
+  --ai-bd: none;
+  color: var(--mantine-color-dark-1);
+}
+
+.mantine-Button-root[data-variant='default']:hover,
+.mantine-ActionIcon-root[data-variant='default']:hover {
+  --button-hover: var(--surface-container-highest);
+  --ai-hover: var(--surface-container-highest);
+}
+
+/* Glass for floating panels: surface_container at 70% with a 24px blur. */
+.mantine-Modal-content,
+.mantine-Modal-header,
+.mantine-Popover-dropdown,
+.mantine-Menu-dropdown,
+.mantine-Combobox-dropdown {
+  background-color: rgba(29, 32, 38, 0.7);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.mantine-Modal-header {
+  background-color: transparent;
+  backdrop-filter: none;
+}
+
+.mantine-Modal-title {
+  font-family: var(--font-heading);
+  font-weight: 700;
+}
+
+/* Ghost border fallback for floating panels that need an edge. */
+.mantine-Popover-dropdown,
+.mantine-Menu-dropdown,
+.mantine-Combobox-dropdown {
+  border: 1px solid rgba(60, 73, 78, 0.15);
+}
+
+/* Tables: label-sm headers, tonal hover, no divider lines. */
+.mantine-Table-th {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+}
+
+.mantine-Table-tfoot .mantine-Table-th {
+  font-size: var(--mantine-font-size-sm);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--mantine-color-text);
+  background-color: var(--surface-container-highest);
+}
+
+.mantine-Table-thead {
+  background-color: var(--surface-container-high);
+}
+
+/* Charts: recessive gridlines; tooltips float with the ambient shadow. */
+.mantine-AreaChart-root,
+.mantine-BarChart-root {
+  --chart-grid-color: rgba(60, 73, 78, 0.6);
+}
+
+.mantine-AreaChart-tooltip,
+.mantine-BarChart-tooltip {
+  background-color: rgba(29, 32, 38, 0.85);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(60, 73, 78, 0.15);
+  box-shadow: 0px 12px 32px rgba(4, 6, 10, 0.4);
+}
+
+/* Hero: a subtle primary → primary_container wash over surface_container_high. */
+.hero-card.mantine-Paper-root {
+  background:
+    linear-gradient(135deg, rgba(76, 214, 255, 0.14), rgba(0, 157, 193, 0.04) 60%),
+    var(--surface-container-high);
+}
+
+/* List rows: separated by spacing and a hover tone instead of divider lines. */
+.list-row {
+  border-radius: var(--mantine-radius-sm);
+}
+
+.list-row:hover {
+  background-color: var(--surface-container-highest);
 }

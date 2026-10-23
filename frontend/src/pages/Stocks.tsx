@@ -79,7 +79,7 @@ export default function StocksPage() {
         }
       />
 
-      <SimpleGrid cols={{ base: 1, sm: 3 }} mb="md">
+      <SimpleGrid cols={{ base: 1, sm: 3 }} mb="xl">
         <StatCard
           label="Portfolio value"
           value={money(summary?.total_value)}
@@ -123,7 +123,7 @@ export default function StocksPage() {
         />
       </SimpleGrid>
 
-      <Stack gap="md">
+      <Stack gap="lg">
         <SectionCard title="Holdings">
           {isLoading ? null : holdings.length === 0 ? (
             <EmptyState
@@ -246,7 +246,7 @@ export default function StocksPage() {
         </SectionCard>
 
         {holdings.length > 0 && (
-          <Grid gutter="md">
+          <Grid gutter="lg">
             <Grid.Col span={{ base: 12, lg: 8 }}>
               <SectionCard
                 title="Portfolio value"
@@ -267,10 +267,10 @@ export default function StocksPage() {
                       h={260}
                       data={chartData}
                       dataKey="date"
-                      series={[{ name: 'Value', color: 'var(--series-1)' }]}
+                      series={[{ name: 'Value', color: 'var(--trend)' }]}
                       curveType="linear"
                       strokeWidth={2}
-                      fillOpacity={0.15}
+                      fillOpacity={0.2}
                       withDots={false}
                       valueFormatter={(v) => money(v)}
                       yAxisProps={{ tickFormatter: (v: number) => moneyCompact(v), width: 70, domain: ['auto', 'auto'] }}
@@ -287,7 +287,7 @@ export default function StocksPage() {
             </Grid.Col>
             <Grid.Col span={{ base: 12, lg: 4 }}>
               <SectionCard title="Allocation">
-                <Stack gap="md">
+                <Stack gap="lg">
                   {allocation.map((a) => (
                     <div key={a.type}>
                       <Group justify="space-between" mb={4}>
@@ -296,7 +296,7 @@ export default function StocksPage() {
                           {money(a.value)} · {total ? percent(a.value / total) : '—'}
                         </Text>
                       </Group>
-                      <Progress value={total ? (a.value / total) * 100 : 0} color="var(--series-1)" size="md" />
+                      <Progress value={total ? (a.value / total) * 100 : 0} color="var(--trend)" size="md" />
                     </div>
                   ))}
                 </Stack>

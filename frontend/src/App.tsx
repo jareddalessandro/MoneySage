@@ -1,13 +1,11 @@
-import { ActionIcon, AppShell, Burger, Group, NavLink, Text, Tooltip, useMantineColorScheme } from '@mantine/core';
+import { AppShell, Burger, Group, NavLink, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconChartLine,
   IconLayoutDashboard,
-  IconMoon,
   IconReceipt2,
   IconScale,
   IconSettings,
-  IconSun,
   IconTargetArrow,
 } from '@tabler/icons-react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
@@ -31,37 +29,25 @@ const NAV = [
 export default function App() {
   const [opened, { toggle, close }] = useDisclosure();
   const { pathname } = useLocation();
-  const { colorScheme, setColorScheme } = useMantineColorScheme();
-  const dark = colorScheme === 'dark';
 
   return (
     <AppShell
-      header={{ height: 56 }}
-      navbar={{ width: 230, breakpoint: 'sm', collapsed: { mobile: !opened } }}
-      padding="md"
+      header={{ height: { base: 56, sm: 0 } }}
+      navbar={{ width: 240, breakpoint: 'sm', collapsed: { mobile: !opened } }}
+      padding={{ base: 'md', sm: 'xl' }}
     >
-      <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
-          <Group gap="sm">
-            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            <Text fw={700} size="lg">
-              💰 MoneySage
-            </Text>
-          </Group>
-          <Tooltip label={dark ? 'Light mode' : 'Dark mode'}>
-            <ActionIcon
-              variant="default"
-              size="lg"
-              aria-label="Toggle color scheme"
-              onClick={() => setColorScheme(dark ? 'light' : 'dark')}
-            >
-              {dark ? <IconSun size={18} /> : <IconMoon size={18} />}
-            </ActionIcon>
-          </Tooltip>
+      {/* The header only carries the menu button on small screens; on desktop the logo lives in the sidebar. */}
+      <AppShell.Header hiddenFrom="sm">
+        <Group h="100%" px="md" gap="sm">
+          <Burger opened={opened} onClick={toggle} size="sm" aria-label="Toggle navigation" />
+          <Logo />
         </Group>
       </AppShell.Header>
 
-      <AppShell.Navbar p="xs">
+      <AppShell.Navbar p="sm">
+        <Group px="sm" py="md" mb="sm" visibleFrom="sm">
+          <Logo />
+        </Group>
         {NAV.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -71,6 +57,8 @@ export default function App() {
             leftSection={<Icon size={18} stroke={1.6} />}
             active={to === '/' ? pathname === '/' : pathname.startsWith(to)}
             onClick={close}
+            mb={4}
+            style={{ borderRadius: 'var(--mantine-radius-md)' }}
           />
         ))}
       </AppShell.Navbar>
@@ -87,5 +75,13 @@ export default function App() {
         </Routes>
       </AppShell.Main>
     </AppShell>
+  );
+}
+
+function Logo() {
+  return (
+    <Text className="headline" fw={800} size="lg" lts="-0.01em">
+      💰 MoneySage
+    </Text>
   );
 }

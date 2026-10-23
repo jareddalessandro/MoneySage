@@ -98,7 +98,7 @@ export default function IncomeStatementPage() {
         }
       />
 
-      <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} mb="md">
+      <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} mb="xl">
         <StatCard
           label="Income"
           value={money(statement?.total_income)}
@@ -125,7 +125,7 @@ export default function IncomeStatementPage() {
         />
       </SimpleGrid>
 
-      <Stack gap="md">
+      <Stack gap="lg">
         <SectionCard
           title={`Transactions · ${monthLabel(month)}`}
           actions={
@@ -193,7 +193,7 @@ export default function IncomeStatementPage() {
                         )}
                       </Table.Td>
                       <Table.Td>
-                        <Badge variant="light" color={t.category.kind === 'income' ? 'blue' : 'gray'} fw={500} tt="none">
+                        <Badge variant="light" color={t.category.kind === 'income' ? 'sky' : 'gray'} fw={500} tt="none">
                           {t.category.name}
                         </Badge>
                       </Table.Td>
@@ -219,7 +219,7 @@ export default function IncomeStatementPage() {
           )}
         </SectionCard>
 
-        <Grid gutter="md">
+        <Grid gutter="lg">
           <Grid.Col span={{ base: 12, lg: 7 }}>
             <SectionCard title="Budget vs. actual">
               {statement && statement.categories.length > 0 ? (
@@ -355,7 +355,7 @@ function BudgetVsActual({ statement }: { statement: IncomeStatement }) {
                 {ratio != null && (
                   <Progress
                     value={Math.min(ratio, 1) * 100}
-                    color={over ? 'red' : kind === 'income' ? 'blue' : 'teal'}
+                    color={over ? 'var(--delta-down)' : kind === 'income' ? 'var(--series-1)' : 'var(--series-2)'}
                     size="sm"
                     mt={4}
                     aria-label={`${Math.round(ratio * 100)}% of budget`}

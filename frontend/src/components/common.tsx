@@ -10,11 +10,13 @@ import { shiftMonth, signedMoney, thisMonth } from '../format';
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
-    <Group justify="space-between" align="flex-end" mb="lg" wrap="wrap" gap="sm">
+    <Group justify="space-between" align="flex-end" mb="xl" wrap="wrap" gap="sm">
       <div>
-        <Title order={2}>{title}</Title>
+        <Title order={1} fz="1.75rem" lts="-0.01em">
+          {title}
+        </Title>
         {description && (
-          <Text c="dimmed" size="sm">
+          <Text c="dimmed" size="sm" mt={4}>
             {description}
           </Text>
         )}
@@ -59,15 +61,30 @@ export function Delta({
 
 export function StatCard({ label, value, footer }: { label: string; value: ReactNode; footer?: ReactNode }) {
   return (
-    <Paper withBorder p="md" radius="md">
-      <Text size="xs" c="dimmed" tt="uppercase" fw={600}>
-        {label}
-      </Text>
-      <Text fw={700} fz={26} mt={4} lh={1.2}>
+    <Paper p="1.1rem" h="100%">
+      <Text className="label-sm">{label}</Text>
+      <Text className="headline num" fw={800} fz="1.75rem" mt={6} lh={1.15}>
         {value}
       </Text>
       {footer && (
-        <Text component="div" size="sm" c="dimmed" mt={6}>
+        <Text component="div" size="sm" c="dimmed" mt={8}>
+          {footer}
+        </Text>
+      )}
+    </Paper>
+  );
+}
+
+/** The one headline number on a page, at display size on the primary gradient wash. */
+export function HeroStat({ label, value, footer }: { label: string; value: ReactNode; footer?: ReactNode }) {
+  return (
+    <Paper p="lg" h="100%" className="hero-card">
+      <Text className="label-sm">{label}</Text>
+      <Text className="headline num" fw={800} fz="clamp(2.25rem, 5vw, 3.5rem)" mt={8} lh={1.05} lts="-0.02em">
+        {value}
+      </Text>
+      {footer && (
+        <Text component="div" size="sm" c="dimmed" mt="sm">
           {footer}
         </Text>
       )}
@@ -77,9 +94,11 @@ export function StatCard({ label, value, footer }: { label: string; value: React
 
 export function SectionCard({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
   return (
-    <Card withBorder radius="md" p="md">
-      <Group justify="space-between" mb="sm" wrap="wrap" gap="xs">
-        <Text fw={600}>{title}</Text>
+    <Card p="1.1rem">
+      <Group justify="space-between" mb="md" wrap="wrap" gap="xs">
+        <Text className="headline" fw={700} size="lg">
+          {title}
+        </Text>
         {actions && <Group gap="xs">{actions}</Group>}
       </Group>
       {children}
@@ -148,7 +167,7 @@ export function confirmDelete(what: string, onConfirm: () => void, detail?: stri
     title: `Delete ${what}?`,
     children: <Text size="sm">{detail ?? 'This cannot be undone.'}</Text>,
     labels: { confirm: 'Delete', cancel: 'Cancel' },
-    confirmProps: { color: 'red' },
+    confirmProps: { color: 'red', variant: 'filled' },
     onConfirm,
   });
 }

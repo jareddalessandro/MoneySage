@@ -54,7 +54,7 @@ Copy `.env.example` to `.env` to change ports, the database password, the refres
 
 ## Development
 
-Source folders are mounted into the containers, so code changes hot-reload.
+Source folders are mounted into the containers, so code changes hot-reload. The UI follows the design system in [`DESIGN.md`](DESIGN.md) (tokens live in `frontend/src/theme.ts` and `frontend/src/styles.css`). [`CLAUDE.md`](CLAUDE.md) has project notes and rules for Claude Code, including: never commit directly to `main`.
 
 ```powershell
 docker compose exec backend python -m pytest            # backend tests (use a separate moneysage_test DB)

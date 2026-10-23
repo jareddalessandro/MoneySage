@@ -144,7 +144,7 @@ export default function BudgetPage() {
         }
       />
 
-      <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} mb="md">
+      <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} mb="xl">
         <StatCard label="Monthly income" value={money(summary?.monthly_income)} />
         <StatCard label="Monthly expenses" value={money(summary?.monthly_expenses)} />
         <StatCard
@@ -163,9 +163,9 @@ export default function BudgetPage() {
         />
       </SimpleGrid>
 
-      <Grid gutter="md">
+      <Grid gutter="lg">
         <Grid.Col span={{ base: 12, lg: 7 }}>
-          <Stack gap="md">
+          <Stack gap="lg">
             <SectionCard title="Expected income">{isLoading ? null : itemTable(income, 'income')}</SectionCard>
             <SectionCard title="Expected expenses">{isLoading ? null : itemTable(expenses, 'expense')}</SectionCard>
           </Stack>
