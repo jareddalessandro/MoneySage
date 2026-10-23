@@ -1,0 +1,54 @@
+name: moneysage
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-moneysage}
+      POSTGRES_USER: ${POSTGRES_USER:-moneysage}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-moneysage}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # 5433 on the host so it won't clash with a locally installed Postgres
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-moneysage}:${POSTGRES_PASSWORD:-moneysage}@db:5432/${POSTGRES_DB:-moneysage}
+      PRICE_REFRESH_HOUR: ${PRICE_REFRESH_HOUR:-17}
+      PRICE_REFRESH_MINUTE: ${PRICE_REFRESH_MINUTE:-30}
+      PRICE_REFRESH_TZ: ${PRICE_REFRESH_TZ:-America/New_York}
+      TZ: ${TZ:-America/Phoenix}
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./backend:/app
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8100}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      API_PROXY_TARGET: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5180}:5173"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

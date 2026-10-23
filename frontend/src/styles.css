@@ -1,0 +1,28 @@
+/* Chart palette: categorical slots stepped separately for light and dark surfaces. */
+:root {
+  --series-1: #2a78d6; /* blue — income, values */
+  --series-2: #eb6834; /* orange — expenses */
+  --series-3: #1baf7a; /* aqua */
+  --delta-up: #006300;
+  --delta-down: #d03b3b;
+}
+
+[data-mantine-color-scheme='dark'] {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --delta-up: #0ca30c;
+  --delta-down: #e66767;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.delta-up {
+  color: var(--delta-up);
+}
+
+.delta-down {
+  color: var(--delta-down);
+}

@@ -1,0 +1,2 @@
+# Keep LF line endings: the source is bind-mounted into Linux containers.
+* text=auto eol=lf
