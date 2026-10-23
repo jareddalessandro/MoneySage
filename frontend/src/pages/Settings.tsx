@@ -82,9 +82,9 @@ function CategoryRow({ category }: { category: Category }) {
     <Group
       justify="space-between"
       py={6}
-      px={4}
+      px="xs"
       wrap="nowrap"
-      style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}
+      className="list-row"
     >
       {editing ? (
         <TextInput

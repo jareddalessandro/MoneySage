@@ -241,7 +241,7 @@ export default function BalanceSheetPage() {
         }
       />
 
-      <SimpleGrid cols={{ base: 1, sm: 3 }} mb="md">
+      <SimpleGrid cols={{ base: 1, sm: 3 }} mb="xl">
         <StatCard label="Total assets" value={money(sheet?.total_assets)} />
         <StatCard label="Total liabilities" value={money(sheet?.total_liabilities)} />
         <StatCard
@@ -257,7 +257,7 @@ export default function BalanceSheetPage() {
         />
       </SimpleGrid>
 
-      <Stack gap="md">
+      <Stack gap="lg">
         <SectionCard
           title={`Balances · ${monthLabel(month)}`}
           actions={
@@ -325,10 +325,10 @@ export default function BalanceSheetPage() {
               h={260}
               data={trendData}
               dataKey="month"
-              series={[{ name: 'Net worth', color: 'var(--series-1)' }]}
+              series={[{ name: 'Net worth', color: 'var(--trend)' }]}
               curveType="monotone"
               strokeWidth={2}
-              fillOpacity={0.15}
+              fillOpacity={0.2}
               withDots={false}
               valueFormatter={(v) => money(v)}
               yAxisProps={{ tickFormatter: (v: number) => moneyCompact(v), width: 70 }}

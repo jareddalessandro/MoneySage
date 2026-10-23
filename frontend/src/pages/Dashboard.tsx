@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 
 import { api } from '../api';
-import { Delta, EmptyState, PageHeader, SectionCard, StatCard } from '../components/common';
+import { Delta, EmptyState, HeroStat, PageHeader, SectionCard, StatCard } from '../components/common';
 import { money, moneyCompact, monthLabel, monthShort, SERIES_ORDER } from '../format';
 
 export default function DashboardPage() {
@@ -21,42 +21,48 @@ export default function DashboardPage() {
     <>
       <PageHeader title="Dashboard" description={d ? `Family finances at a glance · ${monthLabel(d.month)}` : undefined} />
 
-      <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }} mb="md">
-        <StatCard
-          label="Net worth"
-          value={money(d?.net_worth)}
-          footer={
-            d?.net_worth == null ? (
-              <Anchor component={Link} to="/balance-sheet" size="sm">
-                Add balances →
-              </Anchor>
-            ) : d.net_worth_change != null ? (
-              <Delta value={d.net_worth_change} suffix="vs. prior month" />
-            ) : (
-              `as of ${monthLabel(d.net_worth_month!)}`
-            )
-          }
-        />
-        <StatCard
-          label="Net this month"
-          value={<span className={d && d.month_net < 0 ? 'delta-down' : undefined}>{money(d?.month_net)}</span>}
-          footer={d && `${money(d.month_income)} in · ${money(d.month_expenses)} out`}
-        />
-        <StatCard
-          label="Investments"
-          value={money(d?.portfolio_value)}
-          footer={d && d.portfolio_value > 0 ? <Delta value={d.portfolio_day_change} suffix="today" /> : undefined}
-        />
-        <StatCard
-          label="Planned monthly surplus"
-          value={money(d ? d.budget_monthly_income - d.budget_monthly_expenses : null)}
-          footer={d && `${money(d.budget_monthly_income)} income · ${money(d.budget_monthly_expenses)} expenses`}
-        />
-      </SimpleGrid>
+      <Grid gutter="lg" mb="xl">
+        <Grid.Col span={{ base: 12, lg: 5 }}>
+          <HeroStat
+            label="Net worth"
+            value={money(d?.net_worth)}
+            footer={
+              d?.net_worth == null ? (
+                <Anchor component={Link} to="/balance-sheet" size="sm">
+                  Add balances →
+                </Anchor>
+              ) : d.net_worth_change != null ? (
+                <Delta value={d.net_worth_change} suffix="vs. prior month" />
+              ) : (
+                `as of ${monthLabel(d.net_worth_month!)}`
+              )
+            }
+          />
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, lg: 7 }}>
+          <SimpleGrid cols={{ base: 1, xs: 3 }} h="100%">
+            <StatCard
+              label="Net this month"
+              value={<span className={d && d.month_net < 0 ? 'delta-down' : undefined}>{money(d?.month_net)}</span>}
+              footer={d && `${money(d.month_income)} in · ${money(d.month_expenses)} out`}
+            />
+            <StatCard
+              label="Investments"
+              value={money(d?.portfolio_value)}
+              footer={d && d.portfolio_value > 0 ? <Delta value={d.portfolio_day_change} suffix="today" /> : undefined}
+            />
+            <StatCard
+              label="Planned monthly surplus"
+              value={money(d ? d.budget_monthly_income - d.budget_monthly_expenses : null)}
+              footer={d && `${money(d.budget_monthly_income)} income · ${money(d.budget_monthly_expenses)} expenses`}
+            />
+          </SimpleGrid>
+        </Grid.Col>
+      </Grid>
 
-      <Grid gutter="md">
+      <Grid gutter="lg">
         <Grid.Col span={{ base: 12, lg: 8 }}>
-          <Stack gap="md">
+          <Stack gap="lg">
             <SectionCard title="Net worth">
               {netWorthData.length < 2 ? (
                 <EmptyState message="Record balances on the Balance Sheet for two or more months to see your net worth trend." />
@@ -65,10 +71,10 @@ export default function DashboardPage() {
                   h={240}
                   data={netWorthData}
                   dataKey="month"
-                  series={[{ name: 'Net worth', color: 'var(--series-1)' }]}
+                  series={[{ name: 'Net worth', color: 'var(--trend)' }]}
                   curveType="monotone"
                   strokeWidth={2}
-                  fillOpacity={0.15}
+                  fillOpacity={0.2}
                   withDots={false}
                   valueFormatter={(v) => money(v)}
                   yAxisProps={{ tickFormatter: (v: number) => moneyCompact(v), width: 70 }}
@@ -117,7 +123,7 @@ export default function DashboardPage() {
                 </Group>
                 <Progress
                   value={Math.min(spentRatio, 1) * 100}
-                  color={spentRatio > 1 ? 'red' : 'teal'}
+                  color={spentRatio > 1 ? 'var(--delta-down)' : 'sky'}
                   size="lg"
                   aria-label="Share of monthly expense budget spent"
                 />

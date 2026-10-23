@@ -1,10 +1,12 @@
+import '@fontsource-variable/inter';
+import '@fontsource-variable/manrope';
 import '@mantine/core/styles.css';
 import '@mantine/dates/styles.css';
 import '@mantine/charts/styles.css';
 import '@mantine/notifications/styles.css';
 import './styles.css';
 
-import { createTheme, MantineProvider } from '@mantine/core';
+import { MantineProvider } from '@mantine/core';
 import { DatesProvider } from '@mantine/dates';
 import { ModalsProvider } from '@mantine/modals';
 import { Notifications } from '@mantine/notifications';
@@ -14,12 +16,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 
 import App from './App';
-
-const theme = createTheme({
-  primaryColor: 'blue',
-  fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
-  defaultRadius: 'md',
-});
+import { cssVariablesResolver, theme } from './theme';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,7 +26,7 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <MantineProvider theme={theme} defaultColorScheme="auto">
+    <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} forceColorScheme="dark">
       <DatesProvider settings={{ firstDayOfWeek: 0 }}>
         <QueryClientProvider client={queryClient}>
           <ModalsProvider>
