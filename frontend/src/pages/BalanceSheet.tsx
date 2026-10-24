@@ -166,6 +166,9 @@ export default function BalanceSheetPage() {
     ? rows.reduce((sum, r) => sum + (r.account.kind === 'asset' ? 1 : -1) * (r.previous_balance ?? 0), 0)
     : null;
 
+  const previousAssets = rows.some((r) => r.account.kind === 'asset' && r.previous_balance != null)
+    ? rows.reduce((sum, r) => sum + (r.account.kind === 'asset' ? (r.previous_balance ?? 0) : 0), 0)
+    : null;
   const cash = groupTotal(rows, CASH_SUBTYPES);
   const investments = groupTotal(rows, INVESTMENT_SUBTYPES);
 
@@ -342,7 +345,11 @@ export default function BalanceSheetPage() {
       />
 
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} mb="xl">
-        <StatCard label="Total assets" value={money(sheet?.total_assets)} />
+        <StatCard
+          label="Total assets"
+          value={money(sheet?.total_assets)}
+          footer={sheet && previousAssets != null && <Delta value={sheet.total_assets - previousAssets} suffix="vs. last month" />}
+        />
         <StatCard label="Total liabilities" value={money(sheet?.total_liabilities)} />
         <StatCard
           label="Net worth"

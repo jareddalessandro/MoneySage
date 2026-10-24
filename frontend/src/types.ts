@@ -214,3 +214,17 @@ export interface PortfolioPoint {
   value: number;
 }
 
+/** Reference info for a credit card. Never card numbers or logins. */
+export interface CreditCard {
+  id: number;
+  name: string;
+  issuer: string | null;
+  payment_url: string | null;
+  annual_fee: number;
+  /** 1-12: the month the annual fee posts. */
+  annual_fee_month: number | null;
+  benefits: string[];
+  notes: string | null;
+}
+
+export type CreditCardInput = Omit<CreditCard, 'id'>;

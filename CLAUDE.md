@@ -28,8 +28,8 @@ docker compose exec frontend npx tsc --noEmit
 
 **Backend:** FastAPI + SQLAlchemy 2 + Alembic + psycopg 3, Python 3.12, in `backend/app/`.
 
-- **`models.py`:** Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun. Enums are stored as VARCHAR (`native_enum=False`).
-- **`routers/`:** one router per tab (`budget`, `transactions` for the income statement, `balance_sheet`, `stocks`, `categories`). There's no Dashboard: the user removed it, and `/` redirects to Budget.
+- **`models.py`:** Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun, CreditCard. Enums are stored as VARCHAR (`native_enum=False`).
+- **`routers/`:** one router per tab (`budget`, `transactions` for the income statement, `balance_sheet`, `stocks`, `categories`, `credit_cards`). There's no Dashboard: the user removed it, and `/` redirects to Budget.
 - **`services/`:**
   - `budget.py`: normalizes frequencies to monthly amounts.
   - `prices.py`: yfinance fetching and refresh runs.
@@ -92,6 +92,11 @@ docker compose exec frontend npx tsc --noEmit
 - **Portfolio value chart:** `/api/portfolio/history?days=N` values the *current* holdings over the range. It opens on the range start itself, using the last close on or before it (it looks back 10 days past weekends and holidays). YTD asks for the days since Dec 31, so its base is last year's final close. The header shows the change and % from the first point to the last. If history doesn't reach back that far, it says "since <date>". The % includes cash in the base.
 - **Tickers:** `normalize_ticker` uppercases, and crypto without `-` gets `-USD` (BTC → BTC-USD). New tickers are validated by fetching them, which returns 400 if Yahoo has no data.
 - **Timezone:** the container `TZ` (default America/Phoenix, the user's zone) decides which month "today" is in.
+- **Credit Card Info** (`CreditCard`, `/api/credit-cards`, `pages/CreditCards.tsx`):
+  - Reference info per card: name (unique), issuer, payment site, annual fee, the month the fee posts (1-12), benefits (a JSONB list of short lines; the form takes one per line), and notes.
+  - **Never add card numbers, CVVs, logins or passwords.** The page tells users not to enter them.
+  - `payment_url` is normalized server-side: "chase.com" becomes `https://chase.com`, and non-web schemes (e.g. `javascript:`) are rejected. Links open in a new tab with `rel="noopener noreferrer"`.
+  - It isn't linked to Balance Sheet credit card accounts yet.
 - **Statement import (planned, not built):** the user wants to upload checking/savings statements and have them parsed into transactions. `Transaction` already has `account_id`, `source` and `import_hash` (unique) for this. Don't build it until the user asks.
 
 ### Tests

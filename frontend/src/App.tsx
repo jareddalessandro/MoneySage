@@ -2,6 +2,7 @@ import { AppShell, Burger, Group, NavLink, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconChartLine,
+  IconCreditCard,
   IconReceipt2,
   IconScale,
   IconSettings,
@@ -11,6 +12,7 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import BalanceSheetPage from './pages/BalanceSheet';
 import BudgetPage from './pages/Budget';
+import CreditCardsPage from './pages/CreditCards';
 import IncomeStatementPage from './pages/IncomeStatement';
 import SettingsPage from './pages/Settings';
 import StocksPage from './pages/Stocks';
@@ -20,6 +22,7 @@ const NAV = [
   { to: '/income-statement', label: 'Income Statement', icon: IconReceipt2 },
   { to: '/balance-sheet', label: 'Balance Sheet', icon: IconScale },
   { to: '/stocks', label: 'Stocks', icon: IconChartLine },
+  { to: '/credit-cards', label: 'Credit Card Info', icon: IconCreditCard },
   { to: '/settings', label: 'Categories', icon: IconSettings },
 ];
 
@@ -67,6 +70,7 @@ export default function App() {
           <Route path="/income-statement" element={<IncomeStatementPage />} />
           <Route path="/balance-sheet" element={<BalanceSheetPage />} />
           <Route path="/stocks" element={<StocksPage />} />
+          <Route path="/credit-cards" element={<CreditCardsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/budget" replace />} />
         </Routes>

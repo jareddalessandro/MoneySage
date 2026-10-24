@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -217,3 +218,24 @@ class PriceRefreshRun(Base):
     status: Mapped[str] = mapped_column(String(20), default="running")  # running/success/partial/failed
     tickers_updated: Mapped[int] = mapped_column(Integer, default=0)
     message: Mapped[str | None] = mapped_column(Text)
+
+
+class CreditCard(Base):
+    """Reference info for a credit card: where to pay it, what it offers, what it costs.
+
+    Deliberately holds no card numbers or logins. Balances owed live on the Balance Sheet.
+    """
+
+    __tablename__ = "credit_cards"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    issuer: Mapped[str | None] = mapped_column(String(100))
+    payment_url: Mapped[str | None] = mapped_column(String(500))
+    annual_fee: Mapped[Decimal] = mapped_column(MONEY, default=Decimal(0), server_default="0")
+    # Month the annual fee posts (1-12), if it has one.
+    annual_fee_month: Mapped[int | None] = mapped_column(Integer)
+    # Short benefit lines in display order, e.g. "3% back on dining".
+    benefits: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

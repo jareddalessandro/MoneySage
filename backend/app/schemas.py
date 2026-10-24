@@ -1,9 +1,10 @@
+import re
 from datetime import date, datetime
 from decimal import Decimal
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator
 
 from app.models import AccountKind, AssetType, CategoryColor, CategoryKind, DeductionType, Frequency
 
@@ -293,3 +294,60 @@ class PortfolioSummary(BaseModel):
 class PortfolioPoint(BaseModel):
     date: date
     value: Num
+
+
+# ---------- Credit cards ----------
+
+class CreditCardIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    issuer: str | None = Field(default=None, max_length=100)
+    payment_url: str | None = Field(default=None, max_length=500)
+    annual_fee: Decimal = Field(default=Decimal(0), ge=0, max_digits=14, decimal_places=2)
+    annual_fee_month: int | None = Field(default=None, ge=1, le=12)
+    benefits: list[str] = Field(default_factory=list, max_length=50)
+    notes: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Name is required")
+        return v.strip()
+
+    @field_validator("issuer", "notes")
+    @classmethod
+    def _optional_text(cls, v: str | None) -> str | None:
+        return (v or "").strip() or None
+
+    @field_validator("payment_url")
+    @classmethod
+    def _url(cls, v: str | None) -> str | None:
+        v = (v or "").strip()
+        if not v:
+            return None
+        # People paste "chase.com"; make it a link that opens. Only web links are allowed, so a
+        # scheme like javascript: is rejected rather than turned into a clickable link.
+        if not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:(?!\d)", v):
+            v = f"https://{v}"
+        if not v.lower().startswith(("http://", "https://")) or " " in v:
+            raise ValueError("Payment site must be a web address, like chase.com")
+        return v
+
+    @field_validator("benefits")
+    @classmethod
+    def _benefits(cls, v: list[str]) -> list[str]:
+        lines = [line.strip() for line in v]
+        if any(len(line) > 300 for line in lines):
+            raise ValueError("Each benefit must be 300 characters or fewer")
+        return [line for line in lines if line]
+
+
+class CreditCardOut(ORMModel):
+    id: int
+    name: str
+    issuer: str | None
+    payment_url: str | None
+    annual_fee: Num
+    annual_fee_month: int | None
+    benefits: list[str]
+    notes: str | None

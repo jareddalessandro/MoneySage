@@ -8,6 +8,8 @@ import type {
   Category,
   CategoryColor,
   CategoryKind,
+  CreditCard,
+  CreditCardInput,
   Holding,
   HoldingInput,
   IncomeStatement,
@@ -84,5 +86,10 @@ export const api = {
   portfolioSummary: () => get<PortfolioSummary>('/portfolio/summary'),
   portfolioHistory: (days: number) => get<PortfolioPoint[]>(`/portfolio/history${qs({ days })}`),
   refreshPrices: () => request<RefreshRun>('POST', '/prices/refresh'),
+
+  creditCards: () => get<CreditCard[]>('/credit-cards'),
+  createCreditCard: (body: CreditCardInput) => request<CreditCard>('POST', '/credit-cards', body),
+  updateCreditCard: (id: number, body: CreditCardInput) => request<CreditCard>('PUT', `/credit-cards/${id}`, body),
+  deleteCreditCard: (id: number) => request<void>('DELETE', `/credit-cards/${id}`),
 
 };
