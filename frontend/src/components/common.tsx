@@ -1,12 +1,20 @@
-import { ActionIcon, Button, Card, Group, Paper, Stack, Text, Title, Tooltip } from '@mantine/core';
+import { ActionIcon, Card, Group, Paper, Stack, Table, Text, Title, Tooltip, UnstyledButton } from '@mantine/core';
 import { MonthPickerInput } from '@mantine/dates';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
-import { IconArrowDownRight, IconArrowUpRight, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
+import {
+  IconArrowDownRight,
+  IconArrowUpRight,
+  IconChevronDown,
+  IconChevronLeft,
+  IconChevronRight,
+  IconChevronUp,
+  IconSelector,
+} from '@tabler/icons-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
-import { shiftMonth, signedMoney, thisMonth } from '../format';
+import { shiftMonth, signedMoney } from '../format';
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
@@ -106,6 +114,35 @@ export function SectionCard({ title, actions, children }: { title: string; actio
   );
 }
 
+export type SortDir = 'asc' | 'desc';
+
+/** A table header that sorts its column when clicked; the arrow shows the active direction. */
+export function SortableTh({
+  label,
+  active,
+  dir,
+  onSort,
+  align = 'left',
+}: {
+  label: string;
+  active: boolean;
+  dir: SortDir;
+  onSort: () => void;
+  align?: 'left' | 'right';
+}) {
+  const Icon = !active ? IconSelector : dir === 'asc' ? IconChevronUp : IconChevronDown;
+  return (
+    <Table.Th ta={align} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <UnstyledButton onClick={onSort} className="sort-button" data-active={active || undefined}>
+        <Group gap={4} wrap="nowrap" justify={align === 'right' ? 'flex-end' : 'flex-start'}>
+          <span>{label}</span>
+          <Icon size={12} stroke={2} aria-hidden />
+        </Group>
+      </UnstyledButton>
+    </Table.Th>
+  );
+}
+
 export function EmptyState({ message, action }: { message: string; action?: ReactNode }) {
   return (
     <Stack align="center" py="xl" gap="sm">
@@ -137,11 +174,6 @@ export function MonthSwitcher({ value, onChange }: { value: string; onChange: (m
           <IconChevronRight size={18} />
         </ActionIcon>
       </Tooltip>
-      {value !== thisMonth() && (
-        <Button variant="subtle" size="xs" onClick={() => onChange(thisMonth())}>
-          Today
-        </Button>
-      )}
     </Group>
   );
 }

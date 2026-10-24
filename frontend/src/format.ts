@@ -15,6 +15,7 @@ export const signedMoney = (n: number | null | undefined) =>
 export const quantity = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 8 });
 
 export const percent = (n: number) => `${(n * 100).toFixed(1)}%`;
+export const signedPercent = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${percent(Math.abs(n))}`;
 
 // Months travel as 'YYYY-MM'.
 export const thisMonth = () => dayjs().format('YYYY-MM');
@@ -30,6 +31,14 @@ export const FREQUENCY_LABELS: Record<string, string> = {
   monthly: 'Monthly',
   quarterly: 'Quarterly',
   annual: 'Yearly',
+};
+
+export const DEDUCTION_TYPE_LABELS: Record<string, string> = {
+  retirement: 'Retirement',
+  insurance: 'Insurance',
+  hsa: 'HSA / FSA',
+  tax: 'Tax',
+  other: 'Other',
 };
 
 export const ASSET_SUBTYPES: Record<string, string> = {

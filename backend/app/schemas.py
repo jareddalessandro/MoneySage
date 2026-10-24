@@ -1,11 +1,11 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 
-from app.models import AccountKind, AssetType, CategoryKind, Frequency
+from app.models import AccountKind, AssetType, CategoryColor, CategoryKind, DeductionType, Frequency
 
 
 # Decimals stay exact internally but go out as JSON numbers for the frontend.
@@ -21,10 +21,12 @@ class ORMModel(BaseModel):
 class CategoryIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     kind: CategoryKind
+    color: CategoryColor | None = None  # picked automatically when omitted
 
 
 class CategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
+    color: CategoryColor | None = None
     is_archived: bool | None = None
 
 
@@ -32,10 +34,25 @@ class CategoryOut(ORMModel):
     id: int
     name: str
     kind: CategoryKind
+    color: CategoryColor
     is_archived: bool
 
 
 # ---------- Budget ----------
+
+class DeductionIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    type: DeductionType
+    pre_tax: bool = False
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+
+
+class DeductionOut(ORMModel):
+    name: str
+    type: DeductionType
+    pre_tax: bool
+    amount: Num
+
 
 class BudgetItemIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
@@ -43,6 +60,9 @@ class BudgetItemIn(BaseModel):
     amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
     frequency: Frequency
     notes: str | None = None
+    # Paycheck breakdown (income only): pay before deductions, and the deductions themselves.
+    gross_amount: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
+    deductions: list[DeductionIn] = []
 
 
 class BudgetItemOut(ORMModel):
@@ -53,13 +73,51 @@ class BudgetItemOut(ORMModel):
     frequency: Frequency
     monthly_amount: Num
     notes: str | None
+    gross_amount: Num | None
+    monthly_gross_amount: Num | None
+    deductions: list[DeductionOut]
 
 
 class BudgetCategoryTotal(BaseModel):
     category_id: int
     name: str
     kind: CategoryKind
+    color: CategoryColor
     monthly_amount: Num
+
+
+Stage = Literal["pre_tax", "tax", "post_tax"]
+
+
+class PaycheckLine(BaseModel):
+    name: str
+    type: DeductionType
+    stage: Stage
+    annual_amount: Num
+
+
+class PaycheckBreakdown(BaseModel):
+    """Yearly totals for one paycheck or all of them combined (exact: per-paycheck amount x
+    paychecks per year).
+
+    gross - pre-tax - taxes = after-tax; after-tax - post-tax - unitemized = take-home.
+    The frontend divides by 12 for monthly figures, or by paychecks_per_year for one paycheck.
+    """
+
+    budget_item_id: int | None  # None for the combined view
+    name: str
+    paychecks: int  # how many budget items are included
+    paychecks_per_year: int | None  # None for the combined view
+    annual_gross: Num
+    annual_pre_tax: Num
+    annual_taxes: Num
+    annual_after_tax: Num
+    annual_post_tax: Num
+    # Gross minus itemized deductions minus take-home: withholding that wasn't itemized
+    # (negative if the deductions add up to more than gross minus take-home).
+    annual_unitemized: Num
+    annual_take_home: Num
+    lines: list[PaycheckLine]
 
 
 class BudgetSummary(BaseModel):
@@ -67,6 +125,8 @@ class BudgetSummary(BaseModel):
     monthly_expenses: Num
     monthly_surplus: Num
     by_category: list[BudgetCategoryTotal]
+    paycheck: PaycheckBreakdown | None  # every paycheck combined
+    paycheck_items: list[PaycheckBreakdown]  # one per paycheck
 
 
 # ---------- Accounts / Balance sheet ----------
@@ -123,9 +183,10 @@ class BalanceUpdate(BaseModel):
 
 class NetWorthPoint(BaseModel):
     month: str
-    assets: Num
-    liabilities: Num
-    net_worth: Num
+    # Null for a month with nothing recorded (a gap between recorded months).
+    assets: Num | None
+    liabilities: Num | None
+    net_worth: Num | None
 
 
 # ---------- Transactions / Income statement ----------
@@ -156,6 +217,7 @@ class StatementCategory(BaseModel):
     category_id: int
     name: str
     kind: CategoryKind
+    color: CategoryColor
     actual: Num
     unexpected: Num
     budgeted: Num
@@ -185,10 +247,10 @@ class IncomeTrendPoint(BaseModel):
 # ---------- Holdings / prices ----------
 
 class HoldingIn(BaseModel):
-    ticker: str = Field(min_length=1, max_length=20)
+    ticker: str = Field(default="", max_length=20)  # ignored for cash
     asset_type: AssetType
     quantity: Decimal = Field(gt=0, max_digits=24, decimal_places=8)
-    cost_basis: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    cost_per_unit: Decimal | None = Field(default=None, ge=0, max_digits=20, decimal_places=6)  # per share/coin
     account_id: int | None = None
     notes: str | None = None
 
@@ -198,7 +260,8 @@ class HoldingOut(BaseModel):
     ticker: str
     asset_type: AssetType
     quantity: Num
-    cost_basis: Num | None
+    cost_per_unit: Num | None  # what was paid per share/coin
+    cost_basis: Num | None  # total: quantity x cost_per_unit
     account_id: int | None
     account_name: str | None
     notes: str | None
@@ -230,20 +293,3 @@ class PortfolioSummary(BaseModel):
 class PortfolioPoint(BaseModel):
     date: date
     value: Num
-
-
-# ---------- Dashboard ----------
-
-class Dashboard(BaseModel):
-    month: str
-    net_worth: Num | None
-    net_worth_month: str | None
-    net_worth_change: Num | None
-    month_income: Num
-    month_expenses: Num
-    month_net: Num
-    month_unexpected_expenses: Num
-    budget_monthly_income: Num
-    budget_monthly_expenses: Num
-    portfolio_value: Num
-    portfolio_day_change: Num

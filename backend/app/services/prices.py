@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models import Holding, PriceQuote, PriceRefreshRun
+from app.models import AssetType, Holding, PriceQuote, PriceRefreshRun
 
 log = logging.getLogger(__name__)
 
@@ -66,13 +66,13 @@ def load_ticker(db: Session, ticker: str) -> bool:
 
 
 def refresh_all(db: Session) -> PriceRefreshRun:
-    from app.services.portfolio import sync_account_snapshots
+    from app.services.portfolio import finalize_previous_month, sync_account_snapshots
 
     run = PriceRefreshRun(status="running")
     db.add(run)
     db.commit()
 
-    tickers = sorted(set(db.scalars(select(Holding.ticker))))
+    tickers = sorted(set(db.scalars(select(Holding.ticker).where(Holding.asset_type != AssetType.cash))))
     failures: list[str] = []
     updated = 0
     for ticker in tickers:
@@ -88,6 +88,7 @@ def refresh_all(db: Session) -> PriceRefreshRun:
         store_quotes(db, ticker, quotes)
         updated += 1
 
+    finalize_previous_month(db)
     sync_account_snapshots(db)
 
     run.finished_at = datetime.now(timezone.utc)

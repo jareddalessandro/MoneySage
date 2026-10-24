@@ -30,7 +30,7 @@ def test_income_statement_totals(client, category_id):
 
     lines = {line["name"]: line for line in s["categories"]}
     assert lines["Groceries"] == {
-        "category_id": groceries, "name": "Groceries", "kind": "expense",
+        "category_id": groceries, "name": "Groceries", "kind": "expense", "color": "green",
         "actual": 210.55, "unexpected": 0, "budgeted": 1000,
     }
     assert lines["Home Maintenance"]["unexpected"] == 900

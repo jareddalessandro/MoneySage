@@ -32,6 +32,20 @@ class CategoryKind(str, enum.Enum):
     expense = "expense"
 
 
+class CategoryColor(str, enum.Enum):
+    """Palette keys, in the validated order (the frontend maps each to a hex). Gray is the neutral."""
+
+    blue = "blue"
+    orange = "orange"
+    teal = "teal"
+    violet = "violet"
+    gold = "gold"
+    pink = "pink"
+    green = "green"
+    plum = "plum"
+    gray = "gray"
+
+
 class Frequency(str, enum.Enum):
     weekly = "weekly"
     biweekly = "biweekly"
@@ -46,10 +60,24 @@ class AccountKind(str, enum.Enum):
     liability = "liability"
 
 
+class DeductionType(str, enum.Enum):
+    retirement = "retirement"
+    insurance = "insurance"
+    hsa = "hsa"  # HSA / FSA
+    tax = "tax"
+    other = "other"
+
+
 class AssetType(str, enum.Enum):
     stock = "stock"
     etf = "etf"
     crypto = "crypto"
+    # Uninvested cash in an account (e.g. a brokerage or IRA). Quantity is the dollar amount;
+    # it's worth exactly that, so it has no price history and is never fetched.
+    cash = "cash"
+
+
+CASH_TICKER = "CASH"
 
 
 class Category(Base):
@@ -59,6 +87,9 @@ class Category(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(80))
     kind: Mapped[CategoryKind] = mapped_column(_enum(CategoryKind))
+    color: Mapped[CategoryColor] = mapped_column(
+        _enum(CategoryColor), default=CategoryColor.gray, server_default=CategoryColor.gray.value
+    )
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -69,12 +100,33 @@ class BudgetItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(120))
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="RESTRICT"))
+    # For a paycheck, amount is take-home pay (what hits the bank account), so budget totals and
+    # actual deposits on the income statement line up. gross_amount is pay before deductions.
     amount: Mapped[Decimal] = mapped_column(MONEY)
+    gross_amount: Mapped[Decimal | None] = mapped_column(MONEY)
     frequency: Mapped[Frequency] = mapped_column(_enum(Frequency))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     category: Mapped[Category] = relationship(lazy="joined")
+    deductions: Mapped[list["PaycheckDeduction"]] = relationship(
+        lazy="selectin", cascade="all, delete-orphan", order_by="PaycheckDeduction.position"
+    )
+
+
+class PaycheckDeduction(Base):
+    """One line on a pay stub between gross and take-home pay, per paycheck."""
+
+    __tablename__ = "paycheck_deductions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    budget_item_id: Mapped[int] = mapped_column(ForeignKey("budget_items.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    type: Mapped[DeductionType] = mapped_column(_enum(DeductionType))
+    # Taken out before taxes (traditional 401k, most health insurance). Always false for taxes.
+    pre_tax: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    amount: Mapped[Decimal] = mapped_column(MONEY)
+    position: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
 
 class Account(Base):
@@ -132,10 +184,18 @@ class Holding(Base):
     ticker: Mapped[str] = mapped_column(String(20), index=True)
     asset_type: Mapped[AssetType] = mapped_column(_enum(AssetType))
     quantity: Mapped[Decimal] = mapped_column(Numeric(24, 8))
-    cost_basis: Mapped[Decimal | None] = mapped_column(MONEY)  # total cost, not per share
+    # Average price paid per share (or per coin). Total cost basis is derived from it.
+    cost_per_unit: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def cost_basis(self) -> Decimal | None:
+        """Total cost: quantity x cost per unit, to the cent."""
+        if self.cost_per_unit is None:
+            return None
+        return (self.quantity * self.cost_per_unit).quantize(Decimal("0.01"))
 
 
 class PriceQuote(Base):

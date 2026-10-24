@@ -88,25 +88,28 @@ def income_statement(month: str = MONTH, db: Session = Depends(get_db)):
             Category.id,
             Category.name,
             Category.kind,
+            Category.color,
             Transaction.is_unexpected,
             func.sum(Transaction.amount),
         )
         .join(Category, Category.id == Transaction.category_id)
         .where(Transaction.date >= start, Transaction.date < end)
-        .group_by(Category.id, Category.name, Category.kind, Transaction.is_unexpected)
+        .group_by(Category.id, Category.name, Category.kind, Category.color, Transaction.is_unexpected)
     ).all()
 
     budget = budget_by_category(db)
     lines: dict[int, StatementCategory] = {
         cid: StatementCategory(
-            category_id=cid, name=name, kind=kind, actual=0, unexpected=0, budgeted=budgeted
+            category_id=cid, name=name, kind=kind, color=color, actual=0, unexpected=0, budgeted=budgeted
         )
-        for cid, (name, kind, budgeted) in budget.items()
+        for cid, (name, kind, color, budgeted) in budget.items()
     }
-    for cid, name, kind, unexpected, total in rows:
+    for cid, name, kind, color, unexpected, total in rows:
         line = lines.setdefault(
             cid,
-            StatementCategory(category_id=cid, name=name, kind=kind, actual=0, unexpected=0, budgeted=0),
+            StatementCategory(
+                category_id=cid, name=name, kind=kind, color=color, actual=0, unexpected=0, budgeted=0
+            ),
         )
         line.actual += total
         if unexpected:
