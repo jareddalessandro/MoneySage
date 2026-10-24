@@ -124,9 +124,13 @@ def save_balances(body: BalanceUpdate, month: str = MONTH, db: Session = Depends
     m = parse_month(month)
     for entry in body.balances:
         account = get_account(db, entry.account_id)
-        if account.sync_from_holdings and m == current_month():
+        # The current month tracks the holdings live and future months have no value yet;
+        # only past months can be entered by hand.
+        if account.sync_from_holdings and m >= current_month():
             raise HTTPException(
-                400, f"'{account.name}' is synced from Stocks holdings and can't be edited this month"
+                400,
+                f"'{account.name}' is synced from Stocks holdings and can't be edited "
+                + ("this month" if m == current_month() else "for a future month"),
             )
         if entry.balance is None:
             db.execute(
@@ -165,21 +169,38 @@ def copy_previous(month: str = MONTH, db: Session = Depends(get_db)):
 
 @router.get("/balance-sheet/trend", response_model=list[NetWorthPoint])
 def net_worth_trend(months: int = Query(24, ge=1, le=240), db: Session = Depends(get_db)):
-    start = add_months(current_month(), -(months - 1))
+    """Monthly totals, one point per calendar month so the timeline is evenly spaced.
+
+    Starts at the first month with any asset balance: earlier months holding only debts (history
+    entered for a loan before anything else) would read as a big negative net worth. Ends at the
+    last recorded month, never in the future. Months in between with nothing recorded are null.
+    """
+    this_month = current_month()
     rows = db.execute(
         select(BalanceSnapshot.month, Account.kind, BalanceSnapshot.balance)
         .join(Account, Account.id == BalanceSnapshot.account_id)
-        .where(BalanceSnapshot.month >= start)
+        .where(
+            BalanceSnapshot.month >= add_months(this_month, -(months - 1)),
+            BalanceSnapshot.month <= this_month,
+        )
     ).all()
     totals: dict = defaultdict(lambda: {AccountKind.asset: Decimal(0), AccountKind.liability: Decimal(0)})
     for month, kind, balance in rows:
         totals[month][kind] += balance
-    return [
-        NetWorthPoint(
-            month=format_month(m),
-            assets=t[AccountKind.asset],
-            liabilities=t[AccountKind.liability],
-            net_worth=t[AccountKind.asset] - t[AccountKind.liability],
+    asset_months = sorted(m for m, t in totals.items() if t[AccountKind.asset])
+    if not asset_months:
+        return []
+    points = []
+    m, end = asset_months[0], max(totals)
+    while m <= end:
+        t = totals.get(m)
+        points.append(
+            NetWorthPoint(
+                month=format_month(m),
+                assets=t and t[AccountKind.asset],
+                liabilities=t and t[AccountKind.liability],
+                net_worth=t and t[AccountKind.asset] - t[AccountKind.liability],
+            )
         )
-        for m, t in sorted(totals.items())
-    ]
+        m = add_months(m, 1)
+    return points

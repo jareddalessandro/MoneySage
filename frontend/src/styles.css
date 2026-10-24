@@ -16,6 +16,22 @@
   --trend: var(--primary);
   --series-1: #009dc1; /* income, values */
   --series-2: #d9762b; /* expenses */
+  /* Where gross pay goes (with --series-1 as take-home): validated as a set, all pairs. */
+  --split-retirement: #8f74e6;
+  --split-tax: #d9762b;
+  --split-insurance: #cc5f9a;
+  --split-other: #6f7a80;
+  /* Category palette, in validated order (adjacent pairs pass the CVD and normal-vision checks
+     on surface_container_high). Keys match CategoryColor in the API. */
+  --cat-blue: #3a8fd9;
+  --cat-orange: #d9762b;
+  --cat-teal: #1fa58f;
+  --cat-violet: #8f74e6;
+  --cat-gold: #a8892a;
+  --cat-pink: #cc5f9a;
+  --cat-green: #5d9e3a;
+  --cat-plum: #b05fc9;
+  --cat-gray: #6f7a80;
   --delta-up: #40e56c; /* secondary */
   --delta-down: #ff5353; /* tertiary_container */
 
@@ -91,6 +107,14 @@ body {
   --ai-hover: var(--surface-container-highest);
 }
 
+.mantine-Button-root[data-variant='default']:disabled,
+.mantine-Button-root[data-variant='default'][data-disabled],
+.mantine-ActionIcon-root[data-variant='default']:disabled,
+.mantine-ActionIcon-root[data-variant='default'][data-disabled] {
+  background: transparent;
+  color: var(--mantine-color-dark-3);
+}
+
 /* Glass for floating panels: surface_container at 70% with a 24px blur. */
 .mantine-Modal-content,
 .mantine-Modal-header,
@@ -102,9 +126,18 @@ body {
   -webkit-backdrop-filter: blur(24px);
 }
 
+/* The header is sticky, so it needs its own fill or scrolled content shows through the title. */
 .mantine-Modal-header {
-  background-color: transparent;
+  background-color: rgba(29, 32, 38, 0.96);
   backdrop-filter: none;
+}
+
+/* Dropdowns often open over dense content (e.g. a form inside a modal), where 70% lets the
+   text behind show through; keep the blur but make them nearly opaque so options stay legible. */
+.mantine-Popover-dropdown,
+.mantine-Menu-dropdown,
+.mantine-Combobox-dropdown {
+  background-color: rgba(29, 32, 38, 0.94);
 }
 
 .mantine-Modal-title {
@@ -121,6 +154,7 @@ body {
 
 /* Tables: label-sm headers, tonal hover, no divider lines. */
 .mantine-Table-th {
+  white-space: nowrap;
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.1rem;
@@ -140,15 +174,30 @@ body {
   background-color: var(--surface-container-high);
 }
 
+/* Sortable headers keep the label-sm look; the active column reads in full text color. */
+.sort-button {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  border-radius: var(--mantine-radius-xs);
+}
+
+.sort-button:hover,
+.sort-button[data-active] {
+  color: var(--mantine-color-text);
+}
+
 /* Charts: recessive gridlines; tooltips float with the ambient shadow. */
 .mantine-AreaChart-root,
 .mantine-BarChart-root {
   --chart-grid-color: rgba(60, 73, 78, 0.6);
 }
 
-.mantine-AreaChart-tooltip,
-.mantine-BarChart-tooltip {
-  background-color: rgba(29, 32, 38, 0.85);
+/* Every Mantine chart (area, bar, donut) renders its hover popup as ChartTooltip. Nearly opaque:
+   it sits over busy marks and labels, which shouldn't show through. */
+.mantine-ChartTooltip-tooltip {
+  background-color: rgba(29, 32, 38, 0.97);
   backdrop-filter: blur(24px);
   border: 1px solid rgba(60, 73, 78, 0.15);
   box-shadow: 0px 12px 32px rgba(4, 6, 10, 0.4);
@@ -159,6 +208,28 @@ body {
   background:
     linear-gradient(135deg, rgba(76, 214, 255, 0.14), rgba(0, 157, 193, 0.04) 60%),
     var(--surface-container-high);
+}
+
+/* Striped fill for inferred amounts (e.g. pay that wasn't itemized), so it reads as an estimate
+   and isn't told apart from solid segments by color alone. */
+.hatched {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 3px,
+    rgba(16, 19, 26, 0.55) 3px 6px
+  );
+}
+
+/* Per-account rows under a combined holding: nested one tone deeper instead of a divider. */
+.lot-row {
+  background-color: rgba(50, 53, 60, 0.45);
+}
+
+/* A balance still to enter this month: a soft primary tint. The "Enter balance" placeholder is the
+   text cue, so it isn't color alone. */
+.needs-entry input {
+  border-color: rgba(76, 214, 255, 0.45);
+  background-color: rgba(76, 214, 255, 0.06);
 }
 
 /* List rows: separated by spacing and a hover tone instead of divider lines. */

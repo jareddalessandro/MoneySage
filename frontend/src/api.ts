@@ -6,8 +6,8 @@ import type {
   BudgetItemInput,
   BudgetSummary,
   Category,
+  CategoryColor,
   CategoryKind,
-  Dashboard,
   Holding,
   HoldingInput,
   IncomeStatement,
@@ -48,8 +48,8 @@ const qs = (params: Record<string, string | number | boolean>) =>
 
 export const api = {
   categories: (includeArchived = false) => get<Category[]>(`/categories${qs({ include_archived: includeArchived })}`),
-  createCategory: (body: { name: string; kind: CategoryKind }) => request<Category>('POST', '/categories', body),
-  updateCategory: (id: number, body: { name?: string; is_archived?: boolean }) =>
+  createCategory: (body: { name: string; kind: CategoryKind; color?: CategoryColor }) => request<Category>('POST', '/categories', body),
+  updateCategory: (id: number, body: { name?: string; color?: CategoryColor; is_archived?: boolean }) =>
     request<Category>('PATCH', `/categories/${id}`, body),
   deleteCategory: (id: number) => request<void>('DELETE', `/categories/${id}`),
 
@@ -85,5 +85,4 @@ export const api = {
   portfolioHistory: (days: number) => get<PortfolioPoint[]>(`/portfolio/history${qs({ days })}`),
   refreshPrices: () => request<RefreshRun>('POST', '/prices/refresh'),
 
-  dashboard: () => get<Dashboard>('/dashboard'),
 };

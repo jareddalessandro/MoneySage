@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Account, AssetType, Holding, PriceRefreshRun
+from app.models import CASH_TICKER, Account, AssetType, Holding, PriceRefreshRun
 from app.routers.balance_sheet import get_account
 from app.schemas import (
     HoldingIn,
@@ -44,6 +44,12 @@ def _apply(db: Session, holding: Holding, body: HoldingIn) -> None:
     if body.account_id is not None:
         get_account(db, body.account_id)
     data = body.model_dump()
+    if body.asset_type == AssetType.cash:
+        # Quantity is the dollar amount; there's no ticker to look up and no gain to track.
+        data.update(ticker=CASH_TICKER, cost_per_unit=None)
+        for key, value in data.items():
+            setattr(holding, key, value)
+        return
     data["ticker"] = normalize_ticker(body.ticker, body.asset_type)
     try:
         found = load_ticker(db, data["ticker"])
@@ -68,6 +74,7 @@ def _holdings_out(db: Session, holdings: list[Holding]) -> list[HoldingOut]:
                 ticker=h.ticker,
                 asset_type=h.asset_type,
                 quantity=h.quantity,
+                cost_per_unit=h.cost_per_unit,
                 cost_basis=h.cost_basis,
                 account_id=h.account_id,
                 account_name=account_names.get(h.account_id),
@@ -137,7 +144,7 @@ def portfolio_summary(db: Session = Depends(get_db)):
 
 
 @router.get("/portfolio/history", response_model=list[PortfolioPoint])
-def history(days: int = Query(365, ge=7, le=3650), db: Session = Depends(get_db)):
+def history(days: int = Query(365, ge=1, le=3650), db: Session = Depends(get_db)):
     return [PortfolioPoint(date=d, value=v) for d, v in portfolio_history(db, days)]
 
 

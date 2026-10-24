@@ -1,4 +1,4 @@
-import { AreaChart } from '@mantine/charts';
+import { AreaChart, LineChart } from '@mantine/charts';
 import {
   ActionIcon,
   Badge,
@@ -20,6 +20,7 @@ import {
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import {
+  IconAlertCircle,
   IconArchive,
   IconArchiveOff,
   IconCopy,
@@ -31,7 +32,8 @@ import {
   IconTrash,
 } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { api } from '../api';
 import {
@@ -51,10 +53,55 @@ import {
   moneyCompact,
   monthLabel,
   monthShort,
+  signedPercent,
   subtypeLabel,
   thisMonth,
 } from '../format';
 import type { Account, AccountInput, AccountKind, BalanceRow } from '../types';
+
+const CASH_SUBTYPES = new Set(['checking', 'savings', 'cash']);
+const INVESTMENT_SUBTYPES = new Set(['brokerage', 'retirement', 'hsa', 'crypto']);
+
+// Assets break down the same way as the cards at the top.
+const ASSET_GROUPS = [
+  { key: 'cash', label: 'Cash', has: (subtype: string) => CASH_SUBTYPES.has(subtype) },
+  { key: 'investments', label: 'Investments', has: (subtype: string) => INVESTMENT_SUBTYPES.has(subtype) },
+  {
+    key: 'other',
+    label: 'Other assets',
+    has: (subtype: string) => !CASH_SUBTYPES.has(subtype) && !INVESTMENT_SUBTYPES.has(subtype),
+  },
+];
+
+/** Total of a group of accounts, and its change vs. last month over the accounts that have both months. */
+function groupTotal(rows: BalanceRow[], subtypes: Set<string>) {
+  const group = rows.filter((r) => r.account.kind === 'asset' && subtypes.has(r.account.subtype));
+  const both = group.filter((r) => r.balance != null && r.previous_balance != null);
+  const previous = both.reduce((s, r) => s + r.previous_balance!, 0);
+  const change = both.length ? both.reduce((s, r) => s + r.balance! - r.previous_balance!, 0) : null;
+  return {
+    total: group.some((r) => r.balance != null) ? group.reduce((s, r) => s + (r.balance ?? 0), 0) : null,
+    change,
+    pct: change != null && previous > 0 ? change / previous : null,
+  };
+}
+
+/**
+ * Y-axis range fitted to the data instead of starting at $0, so month-to-month moves are visible:
+ * padded so no point sits on the edge, with ticks at round, evenly spaced steps.
+ */
+function fittedAxis(values: number[]): { domain: [number, number]; ticks: number[] } | undefined {
+  if (values.length === 0) return undefined;
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.02 || 1;
+  const rough = (hi - lo + 2 * pad) / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((m) => m >= rough)!;
+  const min = Math.floor((lo - pad) / step) * step;
+  const steps = Math.max(4, Math.ceil((hi + pad - min) / step));
+  return { domain: [min, min + step * steps], ticks: Array.from({ length: steps + 1 }, (_, i) => min + step * i) };
+}
 
 type Draft = Record<number, number | ''>;
 type Editing = { account: Account | null } | null;
@@ -66,6 +113,7 @@ export default function BalanceSheetPage() {
   const [month, setMonth] = useState(thisMonth);
   const [editing, setEditing] = useState<Editing>(null);
   const [draft, setDraft] = useState<Draft>({});
+  const [trendView, setTrendView] = useState<'net' | 'split'>('net');
 
   const { data: sheet } = useQuery({ queryKey: ['balance-sheet', month], queryFn: () => api.balanceSheet(month) });
   const { data: trend = [] } = useQuery({ queryKey: ['net-worth-trend'], queryFn: () => api.netWorthTrend(36) });
@@ -75,11 +123,27 @@ export default function BalanceSheetPage() {
     if (sheet?.month === month) setDraft(draftFrom(sheet.rows));
   }, [sheet, month]);
 
-  const isCurrentMonth = month === thisMonth();
-  const isSynced = (r: BalanceRow) => r.account.sync_from_holdings && isCurrentMonth;
+  // Synced accounts are read-only this month (live from Stocks) and in future months (no value until then);
+  // past months stay editable for entering history. 'YYYY-MM' strings compare in date order.
+  const isSyncedMonth = month >= thisMonth();
+  const isSynced = (r: BalanceRow) => r.account.sync_from_holdings && isSyncedMonth;
   const rows = sheet?.month === month ? sheet.rows : [];
 
   const changed = rows.filter((r) => !isSynced(r) && (draft[r.account.id] ?? '') !== (r.balance ?? ''));
+  // Balances still to enter: every active account this month, or in a past month the ones that had a
+  // balance the month before. Future months aren't nagged about.
+  const unentered = new Set(
+    rows
+      .filter(
+        (r) =>
+          month <= thisMonth() &&
+          !isSynced(r) &&
+          !r.account.is_archived &&
+          (draft[r.account.id] ?? '') === '' &&
+          (month === thisMonth() || r.previous_balance != null),
+      )
+      .map((r) => r.account.id),
+  );
 
   const save = useAppMutation(
     () =>
@@ -102,119 +166,149 @@ export default function BalanceSheetPage() {
     ? rows.reduce((sum, r) => sum + (r.account.kind === 'asset' ? 1 : -1) * (r.previous_balance ?? 0), 0)
     : null;
 
+  const cash = groupTotal(rows, CASH_SUBTYPES);
+  const investments = groupTotal(rows, INVESTMENT_SUBTYPES);
+
   const missing = rows.filter((r) => r.balance == null && r.previous_balance != null && !isSynced(r)).length;
+
+  const accountRow = (r: BalanceRow, kind: AccountKind) => {
+    const value = draft[r.account.id] ?? '';
+    const current = value === '' ? null : value;
+    const change = current != null && r.previous_balance != null ? current - r.previous_balance : null;
+    return (
+      <Table.Tr key={r.account.id} opacity={r.account.is_archived ? 0.6 : 1}>
+        <Table.Td>
+          <Group gap={6} wrap="nowrap">
+            <Text size="sm" fw={500}>
+              {r.account.name}
+            </Text>
+            {r.account.sync_from_holdings && (
+              <Tooltip label="Value comes from this account's holdings on the Stocks tab. Click to see them.">
+                <Badge
+                  component={Link}
+                  to={`/stocks?account=${r.account.id}`}
+                  size="xs"
+                  variant="light"
+                  leftSection={<IconLink size={10} />}
+                  style={{ cursor: 'pointer' }}
+                >
+                  From Stocks
+                </Badge>
+              </Tooltip>
+            )}
+            {r.account.is_archived && (
+              <Badge size="xs" variant="light" color="gray">
+                Archived
+              </Badge>
+            )}
+          </Group>
+          <Text size="xs" c="dimmed">
+            {subtypeLabel(r.account.subtype)}
+          </Text>
+        </Table.Td>
+        <Table.Td ta="right">
+          {isSynced(r) ? (
+            <Text size="sm" className="num" fw={500}>
+              {money(r.balance)}
+            </Text>
+          ) : (
+            <NumberInput
+              size="xs"
+              w={150}
+              ml="auto"
+              prefix="$"
+              decimalScale={2}
+              thousandSeparator=","
+              min={0}
+              placeholder={unentered.has(r.account.id) ? 'Enter balance' : '—'}
+              hideControls
+              value={value}
+              onChange={(v) => setDraft((d) => ({ ...d, [r.account.id]: v === '' ? '' : Number(v) }))}
+              aria-label={`${r.account.name} balance`}
+              // Compact height, but the same text size and weight as the read-only (synced) balances.
+              styles={{ input: { textAlign: 'right', fontSize: 'var(--mantine-font-size-sm)', fontWeight: 500 } }}
+              className={unentered.has(r.account.id) ? 'num needs-entry' : 'num'}
+            />
+          )}
+        </Table.Td>
+        <Table.Td ta="right">
+          <Group justify="flex-end">
+            {/* Paying down debt is good, so liabilities count "down" as the good direction. */}
+            <Delta value={change} goodWhen={kind === 'asset' ? 'up' : 'down'} />
+          </Group>
+        </Table.Td>
+        <Table.Td>
+          <Menu position="bottom-end">
+            <Menu.Target>
+              <ActionIcon variant="subtle" color="gray" aria-label="Account actions">
+                <IconDots size={16} />
+              </ActionIcon>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item leftSection={<IconPencil size={14} />} onClick={() => setEditing({ account: r.account })}>
+                Edit account
+              </Menu.Item>
+              <Menu.Item
+                leftSection={r.account.is_archived ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
+                onClick={() => updateAccount.mutate({ id: r.account.id, is_archived: !r.account.is_archived })}
+              >
+                {r.account.is_archived ? 'Unarchive' : 'Archive (closed account)'}
+              </Menu.Item>
+              <Menu.Item
+                color="red"
+                leftSection={<IconTrash size={14} />}
+                onClick={() =>
+                  confirmDelete(
+                    `"${r.account.name}"`,
+                    () => deleteAccount.mutate(r.account.id),
+                    'This deletes the account and every monthly balance recorded for it. To keep history for a closed account, archive it instead.',
+                  )
+                }
+              >
+                Delete
+              </Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+        </Table.Td>
+      </Table.Tr>
+    );
+  };
 
   const section = (kind: AccountKind) => {
     const group = rows.filter((r) => r.account.kind === kind);
     if (group.length === 0) return null;
     const total = group.reduce((s, r) => s + (r.balance ?? 0), 0);
+    const subgroups =
+      kind === 'asset'
+        ? ASSET_GROUPS.map((g) => ({ ...g, rows: group.filter((r) => g.has(r.account.subtype)) })).filter((g) => g.rows.length)
+        : [{ key: 'all', label: null, rows: group }];
     return (
       <>
         <Table.Tr>
-          <Table.Th colSpan={5} bg="var(--mantine-color-default-hover)">
+          <Table.Th colSpan={4} bg="var(--mantine-color-default-hover)">
             {kind === 'asset' ? 'Assets' : 'Liabilities'}
           </Table.Th>
         </Table.Tr>
-        {group.map((r) => {
-          const value = draft[r.account.id] ?? '';
-          const current = value === '' ? null : value;
-          const change = current != null && r.previous_balance != null ? current - r.previous_balance : null;
-          return (
-            <Table.Tr key={r.account.id} opacity={r.account.is_archived ? 0.6 : 1}>
-              <Table.Td>
-                <Group gap={6} wrap="nowrap">
-                  <Text size="sm" fw={500}>
-                    {r.account.name}
+        {subgroups.map((g) => (
+          <Fragment key={g.key}>
+            {g.label && (
+              <Table.Tr>
+                <Table.Td pt="sm">
+                  <Text className="label-sm">{g.label}</Text>
+                </Table.Td>
+                <Table.Td ta="right" pt="sm">
+                  <Text size="xs" c="dimmed" className="num">
+                    {g.rows.some((r) => r.balance != null) ? money(g.rows.reduce((s, r) => s + (r.balance ?? 0), 0)) : ''}
                   </Text>
-                  {r.account.sync_from_holdings && (
-                    <Tooltip label="Value comes from holdings linked to this account on the Stocks tab">
-                      <Badge size="xs" variant="light" leftSection={<IconLink size={10} />}>
-                        From Stocks
-                      </Badge>
-                    </Tooltip>
-                  )}
-                  {r.account.is_archived && (
-                    <Badge size="xs" variant="light" color="gray">
-                      Archived
-                    </Badge>
-                  )}
-                </Group>
-                <Text size="xs" c="dimmed">
-                  {subtypeLabel(r.account.subtype)}
-                </Text>
-              </Table.Td>
-              <Table.Td ta="right" className="num">
-                {money(r.previous_balance)}
-              </Table.Td>
-              <Table.Td ta="right">
-                {isSynced(r) ? (
-                  <Text size="sm" className="num" fw={500}>
-                    {money(r.balance)}
-                  </Text>
-                ) : (
-                  <NumberInput
-                    size="xs"
-                    w={150}
-                    ml="auto"
-                    prefix="$"
-                    decimalScale={2}
-                    thousandSeparator=","
-                    min={0}
-                    placeholder="—"
-                    hideControls
-                    value={value}
-                    onChange={(v) => setDraft((d) => ({ ...d, [r.account.id]: v === '' ? '' : Number(v) }))}
-                    aria-label={`${r.account.name} balance`}
-                    styles={{ input: { textAlign: 'right' } }}
-                    className="num"
-                  />
-                )}
-              </Table.Td>
-              <Table.Td ta="right">
-                <Group justify="flex-end">
-                  {/* Paying down debt is good, so liabilities count "down" as the good direction. */}
-                  <Delta value={change} goodWhen={kind === 'asset' ? 'up' : 'down'} />
-                </Group>
-              </Table.Td>
-              <Table.Td>
-                <Menu position="bottom-end">
-                  <Menu.Target>
-                    <ActionIcon variant="subtle" color="gray" aria-label="Account actions">
-                      <IconDots size={16} />
-                    </ActionIcon>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Item leftSection={<IconPencil size={14} />} onClick={() => setEditing({ account: r.account })}>
-                      Edit account
-                    </Menu.Item>
-                    <Menu.Item
-                      leftSection={r.account.is_archived ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
-                      onClick={() => updateAccount.mutate({ id: r.account.id, is_archived: !r.account.is_archived })}
-                    >
-                      {r.account.is_archived ? 'Unarchive' : 'Archive (closed account)'}
-                    </Menu.Item>
-                    <Menu.Item
-                      color="red"
-                      leftSection={<IconTrash size={14} />}
-                      onClick={() =>
-                        confirmDelete(
-                          `"${r.account.name}"`,
-                          () => deleteAccount.mutate(r.account.id),
-                          'This deletes the account and every monthly balance recorded for it. To keep history for a closed account, archive it instead.',
-                        )
-                      }
-                    >
-                      Delete
-                    </Menu.Item>
-                  </Menu.Dropdown>
-                </Menu>
-              </Table.Td>
-            </Table.Tr>
-          );
-        })}
+                </Table.Td>
+                <Table.Td colSpan={2} />
+              </Table.Tr>
+            )}
+            {g.rows.map((r) => accountRow(r, kind))}
+          </Fragment>
+        ))}
         <Table.Tr>
           <Table.Td fw={600}>Total {kind === 'asset' ? 'assets' : 'liabilities'}</Table.Td>
-          <Table.Td />
           <Table.Td ta="right" className="num" fw={600}>
             {money(total)}
           </Table.Td>
@@ -224,7 +318,13 @@ export default function BalanceSheetPage() {
     );
   };
 
-  const trendData = trend.map((p) => ({ month: monthShort(p.month), 'Net worth': p.net_worth }));
+  const trendData = trend.map((p) => ({
+    month: monthShort(p.month),
+    'Net worth': p.net_worth,
+    Assets: p.assets,
+    Liabilities: p.liabilities,
+  }));
+  const recordedMonths = trend.filter((p) => p.net_worth != null).length;
 
   return (
     <>
@@ -241,7 +341,7 @@ export default function BalanceSheetPage() {
         }
       />
 
-      <SimpleGrid cols={{ base: 1, sm: 3 }} mb="xl">
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} mb="xl">
         <StatCard label="Total assets" value={money(sheet?.total_assets)} />
         <StatCard label="Total liabilities" value={money(sheet?.total_liabilities)} />
         <StatCard
@@ -255,6 +355,31 @@ export default function BalanceSheetPage() {
             )
           }
         />
+        <StatCard
+          label="Cash total"
+          value={money(cash.total)}
+          footer={
+            cash.change != null ? (
+              <Delta value={cash.change} suffix="vs. last month" />
+            ) : (
+              'Checking and savings'
+            )
+          }
+        />
+        <StatCard
+          label="Investment total"
+          value={money(investments.total)}
+          footer={
+            investments.change != null ? (
+              <Delta
+                value={investments.change}
+                suffix={`${investments.pct != null ? `(${signedPercent(investments.pct)}) ` : ''}vs. last month`}
+              />
+            ) : (
+              'No balances for last month yet'
+            )
+          }
+        />
       </SimpleGrid>
 
       <Stack gap="lg">
@@ -263,6 +388,14 @@ export default function BalanceSheetPage() {
           actions={
             rows.length > 0 && (
               <>
+                {unentered.size > 0 && (
+                  <Group gap={4} wrap="nowrap" mr="xs">
+                    <IconAlertCircle size={14} color="var(--primary)" aria-hidden />
+                    <Text size="xs" c="dimmed">
+                      {unentered.size} {unentered.size === 1 ? 'balance' : 'balances'} not entered for {monthLabel(month)}
+                    </Text>
+                  </Group>
+                )}
                 {missing > 0 && (
                   <Button
                     size="xs"
@@ -297,14 +430,17 @@ export default function BalanceSheetPage() {
               }
             />
           ) : (
-            <Table.ScrollContainer minWidth={620}>
+            <Table.ScrollContainer minWidth={520}>
               <Table verticalSpacing={6}>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Account</Table.Th>
-                    <Table.Th ta="right">Last month</Table.Th>
-                    <Table.Th ta="right">{monthLabel(month)}</Table.Th>
-                    <Table.Th ta="right">Change</Table.Th>
+                    <Table.Th ta="right" w={170}>
+                      {monthLabel(month)}
+                    </Table.Th>
+                    <Table.Th ta="right" w={190}>
+                      Change vs. last month
+                    </Table.Th>
                     <Table.Th w={40} />
                   </Table.Tr>
                 </Table.Thead>
@@ -317,24 +453,66 @@ export default function BalanceSheetPage() {
           )}
         </SectionCard>
 
-        <SectionCard title="Net worth over time">
-          {trendData.length < 2 ? (
+        <SectionCard
+          title="Net worth over time"
+          actions={
+            <SegmentedControl
+              size="xs"
+              value={trendView}
+              onChange={(v) => setTrendView(v as 'net' | 'split')}
+              data={[
+                { value: 'net', label: 'Net worth' },
+                { value: 'split', label: 'Assets & liabilities' },
+              ]}
+            />
+          }
+        >
+          {recordedMonths < 2 ? (
             <EmptyState message="Record balances for at least two months to see the trend." />
-          ) : (
+          ) : trendView === 'net' ? (
             <AreaChart
               h={260}
               data={trendData}
               dataKey="month"
               series={[{ name: 'Net worth', color: 'var(--trend)' }]}
-              curveType="monotone"
+              curveType="linear"
+              connectNulls
               strokeWidth={2}
               fillOpacity={0.2}
               withDots={false}
+              valueFormatter={(v) => money(v)}
+              yAxisProps={{
+                tickFormatter: (v: number) => moneyCompact(v),
+                width: 70,
+                ...fittedAxis(trend.flatMap((p) => (p.net_worth == null ? [] : [p.net_worth]))),
+              }}
+              gridAxis="x"
+              strokeDasharray="0"
+            />
+          ) : (
+            <LineChart
+              h={260}
+              data={trendData}
+              dataKey="month"
+              series={[
+                { name: 'Assets', color: 'var(--series-1)' },
+                { name: 'Liabilities', color: 'var(--series-2)' },
+              ]}
+              curveType="linear"
+              connectNulls
+              strokeWidth={2}
+              withDots={false}
+              withLegend
               valueFormatter={(v) => money(v)}
               yAxisProps={{ tickFormatter: (v: number) => moneyCompact(v), width: 70 }}
               gridAxis="x"
               strokeDasharray="0"
             />
+          )}
+          {recordedMonths >= 2 && trend.some((p) => p.net_worth == null) && (
+            <Text size="xs" c="dimmed" mt="xs">
+              Months with no balances recorded are bridged with a straight line.
+            </Text>
           )}
         </SectionCard>
       </Stack>

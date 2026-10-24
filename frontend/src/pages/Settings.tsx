@@ -4,8 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { api } from '../api';
+import { CategoryColorPicker } from '../components/CategoryColor';
 import { confirmDelete, PageHeader, SectionCard, useAppMutation } from '../components/common';
-import type { Category, CategoryKind } from '../types';
+import type { Category, CategoryColor, CategoryKind } from '../types';
 
 export default function SettingsPage() {
   const [showArchived, setShowArchived] = useState(false);
@@ -72,7 +73,9 @@ function CategoryList({ kind, categories }: { kind: CategoryKind; categories: Ca
 function CategoryRow({ category }: { category: Category }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(category.name);
-  const update = useAppMutation((body: { name?: string; is_archived?: boolean }) => api.updateCategory(category.id, body));
+  const update = useAppMutation((body: { name?: string; color?: CategoryColor; is_archived?: boolean }) =>
+    api.updateCategory(category.id, body),
+  );
   const remove = useAppMutation(() => api.deleteCategory(category.id), 'Category deleted');
 
   const rename = () =>
@@ -100,6 +103,7 @@ function CategoryRow({ category }: { category: Category }) {
         />
       ) : (
         <Group gap={6}>
+          <CategoryColorPicker value={category.color} onChange={(color) => update.mutate({ color })} />
           <Text size="sm" c={category.is_archived ? 'dimmed' : undefined}>
             {category.name}
           </Text>

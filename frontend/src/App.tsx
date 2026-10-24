@@ -2,7 +2,6 @@ import { AppShell, Burger, Group, NavLink, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconChartLine,
-  IconLayoutDashboard,
   IconReceipt2,
   IconScale,
   IconSettings,
@@ -12,13 +11,11 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import BalanceSheetPage from './pages/BalanceSheet';
 import BudgetPage from './pages/Budget';
-import DashboardPage from './pages/Dashboard';
 import IncomeStatementPage from './pages/IncomeStatement';
 import SettingsPage from './pages/Settings';
 import StocksPage from './pages/Stocks';
 
 const NAV = [
-  { to: '/', label: 'Dashboard', icon: IconLayoutDashboard },
   { to: '/budget', label: 'Budget', icon: IconTargetArrow },
   { to: '/income-statement', label: 'Income Statement', icon: IconReceipt2 },
   { to: '/balance-sheet', label: 'Balance Sheet', icon: IconScale },
@@ -55,7 +52,7 @@ export default function App() {
             to={to}
             label={label}
             leftSection={<Icon size={18} stroke={1.6} />}
-            active={to === '/' ? pathname === '/' : pathname.startsWith(to)}
+            active={pathname.startsWith(to)}
             onClick={close}
             mb={4}
             style={{ borderRadius: 'var(--mantine-radius-md)' }}
@@ -65,13 +62,13 @@ export default function App() {
 
       <AppShell.Main>
         <Routes>
-          <Route path="/" element={<DashboardPage />} />
+          <Route path="/" element={<Navigate to="/budget" replace />} />
           <Route path="/budget" element={<BudgetPage />} />
           <Route path="/income-statement" element={<IncomeStatementPage />} />
           <Route path="/balance-sheet" element={<BalanceSheetPage />} />
           <Route path="/stocks" element={<StocksPage />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/budget" replace />} />
         </Routes>
       </AppShell.Main>
     </AppShell>

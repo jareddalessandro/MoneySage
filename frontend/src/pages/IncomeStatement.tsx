@@ -25,6 +25,7 @@ import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useMemo, useState } from 'react';
 
+import { CategoryBadge, CategoryDot } from '../components/CategoryColor';
 import { api } from '../api';
 import CategorySelect from '../components/CategorySelect';
 import {
@@ -193,9 +194,7 @@ export default function IncomeStatementPage() {
                         )}
                       </Table.Td>
                       <Table.Td>
-                        <Badge variant="light" color={t.category.kind === 'income' ? 'sky' : 'gray'} fw={500} tt="none">
-                          {t.category.name}
-                        </Badge>
+                        <CategoryBadge category={t.category} />
                       </Table.Td>
                       <Table.Td ta="right" className="num" fw={500}>
                         {t.category.kind === 'income' ? '+' : '−'}
@@ -351,7 +350,10 @@ function BudgetVsActual({ statement }: { statement: IncomeStatement }) {
           return (
             <Table.Tr key={c.category_id}>
               <Table.Td>
-                <Text size="sm">{c.name}</Text>
+                <Group gap={6} wrap="nowrap">
+                  <CategoryDot color={c.color} />
+                  <Text size="sm">{c.name}</Text>
+                </Group>
                 {ratio != null && (
                   <Progress
                     value={Math.min(ratio, 1) * 100}

@@ -29,7 +29,7 @@ docker compose exec frontend npx tsc --noEmit
 **Backend:** FastAPI + SQLAlchemy 2 + Alembic + psycopg 3, Python 3.12, in `backend/app/`.
 
 - **`models.py`:** Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun. Enums are stored as VARCHAR (`native_enum=False`).
-- **`routers/`:** one router per tab (`budget`, `transactions` for the income statement, `balance_sheet`, `stocks`, `categories`, `dashboard`).
+- **`routers/`:** one router per tab (`budget`, `transactions` for the income statement, `balance_sheet`, `stocks`, `categories`). There's no Dashboard: the user removed it, and `/` redirects to Budget.
 - **`services/`:**
   - `budget.py`: normalizes frequencies to monthly amounts.
   - `prices.py`: yfinance fetching and refresh runs.
@@ -51,13 +51,45 @@ docker compose exec frontend npx tsc --noEmit
 - **Money:** `NUMERIC(14,2)` / `Decimal` on the backend. Output schemas use the `Num` serializer so values reach JSON as numbers, not strings. Quantities use `Numeric(24,8)`.
 - **Signs are stored positive:** transaction amounts are positive, and category kind (income/expense) decides the sign. Liability balances are also stored positive and subtracted for net worth.
 - **Unexpected items:** `is_unexpected` on a transaction puts it in the "Unexpected items" card on the Income Statement.
+- **Paychecks:** an income budget item becomes a paycheck when `gross_amount` is set. It then has `PaycheckDeduction` rows (all amounts per paycheck).
+  - **`amount` is always take-home**, so budget totals, the surplus, and budget vs. actual on the Income Statement (bank deposits) all stay in take-home terms. Don't switch the budget to gross.
+  - **Deduction stages:** type `tax` is always the tax stage (`pre_tax` is forced false). Other types are pre-tax or post-tax by the `pre_tax` flag.
+  - **Waterfall:** gross − pre-tax − taxes = after-tax; after-tax − post-tax − not itemized = take-home. "Not itemized" (`unitemized`) is the remainder, which lets people enter just gross and take-home. It's negative if the deductions are over-entered (the UI warns).
+  - **Summary totals:** `/api/budget/summary` returns `paycheck` (all paychecks combined) and `paycheck_items` (one per paycheck, with `paychecks_per_year`), as exact **annual** totals (amount × paychecks per year). The frontend divides by 12 for monthly, or by `paychecks_per_year` for per paycheck. Don't derive yearly from rounded monthly figures, which drifts by cents.
+  - **Combining:** in the combined view, same-named lines (e.g. two earners' 401(k)) are combined. The "Income breakdown" card's selector shows each paycheck on its own.
+  - **"Where gross pay goes":** the not-itemized remainder is labeled "Taxes or not itemized" (striped tax orange) when no taxes are entered, since it's mostly withholding, and "Not itemized" (striped gray) when they are. HSA/FSA and other deductions get their own solid gray segment, shown only when present.
+  - **Validation (400):** deductions need a gross amount, take-home can't exceed gross, and only income categories can have either.
 - **Balance snapshots:** one per (account, month). A `null` balance in `PUT /api/balance-sheet` deletes the snapshot.
-- **Synced accounts:** accounts with `sync_from_holdings` get their **current-month** snapshot overwritten from linked holdings' value on every price refresh, holding change, and current-month balance-sheet read. Past months freeze. A synced account can't be edited manually in the current month (the API returns 400).
+- **Balance Sheet cards** (frontend, `groupTotal` in `BalanceSheet.tsx`): Cash total = checking + savings + cash subtypes. Investment total = brokerage + retirement + HSA + crypto. The investment change vs. last month only counts accounts with a balance in both months, so a newly added account doesn't read as a gain. It includes contributions, so it isn't pure market performance.
+- **Balance Sheet table:**
+  - Assets are split into Cash / Investments / Other assets (`ASSET_GROUPS`, same subtypes as the cards), each with a subtotal on its heading row.
+  - Inputs still to fill get `.needs-entry` (primary tint) and an "Enter balance" placeholder, and a count shows by Save. That covers every active non-synced account in the current month, and in past months the ones that had a balance the month before. Future months aren't flagged.
+  - The "From Stocks" badge links to `/stocks?account=<id>`. The Stocks holdings table has an account selector driving the same `?account=` param (`unassigned` for holdings with no account), defaulting to all accounts combined. When filtered, the footer totals and allocation are computed for that account only. The top cards and charts stay portfolio-wide.
+- **Net worth trend** (`/api/balance-sheet/trend`):
+  - Returns one point per calendar month, from the first month with any asset balance (so debt-only history doesn't show as negative net worth) through the last recorded month, never a future one.
+  - A month with nothing recorded is null. The chart bridges it with `connectNulls` and says so.
+  - The net worth view's y-axis is fitted to the data (`fittedAxis`: padded, with round evenly spaced ticks) rather than starting at $0, which flattened real month-to-month moves. The Assets vs. Liabilities view keeps $0, since it compares two amounts.
+  - Lines are straight (`curveType="linear"`), never smoothed. A toggle switches to an Assets vs. Liabilities line view (`--series-1` / `--series-2`).
+- **Synced accounts:** accounts with `sync_from_holdings` get their **current-month** snapshot overwritten from linked holdings' value on every price refresh, holding change, and current-month balance-sheet read. Past months freeze. A synced account can't be edited manually in the current month or a future month (the API returns 400). Past months stay editable so history can be typed in.
+  - **Month-end capture:** the 5:30 PM ET refresh on the last day writes that day's closes, so normally the frozen month holds its month-end value. In case the app was off then, `refresh_all` calls `finalize_previous_month` after storing quotes. It revalues last month's synced snapshots that haven't been written since local midnight on the 1st, using the last close on or before the month's final day and current share counts. It runs once per snapshot (it bumps `updated_at`), never overrides a snapshot written after the month ended (e.g. a manual edit), and never creates missing months. Backfilling earlier months was considered and declined by the user.
 - **Price refresh:**
   - Runs daily at 17:30 America/New_York, every day so crypto stays current.
   - On startup it catches up if the last successful run is more than 20h old.
   - yfinance often has a NaN close for today right after the market closes; `fetch_history` fills it from `fast_info["last_price"]`. Keep that.
   - Crypto price dates are UTC days.
+- **Cash holdings:** `AssetType.cash` represents uninvested cash in an account (brokerage, IRA, money market sweep).
+  - Stored as a `Holding` with ticker `CASH_TICKER` ("CASH"), `quantity` = dollar amount, and `cost_basis` forced to null.
+  - `value_holding` values it at face value with day change 0 and no gain, so it counts toward portfolio value, allocation, and synced account balances, but not toward gains.
+  - It's never fetched: `refresh_all` and `_apply` skip it, so the real stock CASH (Pathward) only matters for stock-type holdings.
+  - `portfolio_history` adds it as a flat amount each day.
+  - No migration was needed: enums are VARCHAR without a CHECK constraint.
+- **Cost basis:** holdings store `cost_per_unit` (average price per share/coin, `Numeric(20,6)`). `Holding.cost_basis` is a derived property (quantity × cost_per_unit, rounded to the cent) used for gains and the "invested" total. The API returns both.
+- **Holdings table grouping (frontend only, `groupPositions` in `Stocks.tsx`):** holdings are grouped by asset type + ticker.
+  - A ticker held in several accounts shows one row with Account "Multiple", totals, and a share-weighted avg cost over the lots that have a cost. It notes "n of m accounts" if some lots lack a cost.
+  - That row expands to per-account rows, which is where edit and delete live. Each account's position stays its own `Holding` row in the DB.
+  - Sorting (ticker, value, allocation, gain/loss) applies to the grouped positions. Rows with no figure for the column (no price, no cost, cash for gain) sort last in both directions. The choice is saved in localStorage (`moneysage.holdings-sort`).
+  - Allocation = market value ÷ the sum of all listed holdings' market values, so the rows add up to 100%.
+- **Portfolio value chart:** `/api/portfolio/history?days=N` values the *current* holdings over the range. It opens on the range start itself, using the last close on or before it (it looks back 10 days past weekends and holidays). YTD asks for the days since Dec 31, so its base is last year's final close. The header shows the change and % from the first point to the last. If history doesn't reach back that far, it says "since <date>". The % includes cash in the base.
 - **Tickers:** `normalize_ticker` uppercases, and crypto without `-` gets `-USD` (BTC → BTC-USD). New tickers are validated by fetching them, which returns 400 if Yahoo has no data.
 - **Timezone:** the container `TZ` (default America/Phoenix, the user's zone) decides which month "today" is in.
 - **Statement import (planned, not built):** the user wants to upload checking/savings statements and have them parsed into transactions. `Transaction` already has `account_id`, `source` and `import_hash` (unique) for this. Don't build it until the user asks.
@@ -81,7 +113,11 @@ docker compose exec frontend npx tsc --noEmit
 - **No-line rule:**
   - No 1px borders or dividers for sectioning or between list or table rows. Separate them with a tone change, spacing, or hover (`.list-row`, `withRowBorders: false` by default).
   - Input borders use `outline_variant`. Floating panels may use a 15% ghost border.
-- **Glass:** modals, popovers, menus, combobox dropdowns and chart tooltips use rgba(29,32,38,0.7) with a 24px backdrop blur and the ambient shadow `0 12px 32px rgba(4,6,10,.4)`.
+- **Glass:**
+  - Modals use rgba(29,32,38,0.7) with a 24px backdrop blur and the ambient shadow `0 12px 32px rgba(4,6,10,.4)`.
+  - Menus, selects and popovers keep the blur but are 94% opaque, because at 70% the text of the form behind them showed through.
+  - The sticky modal header has its own near-opaque fill.
+  - Chart hover popups (every Mantine chart uses `.mantine-ChartTooltip-tooltip`) are 97% opaque. Overlays drawn on a chart, like the donut's center total, go *before* the chart in the DOM so the tooltip paints over them.
 - **Buttons:**
   - `<Button>` defaults to `variant="gradient"`: primary #4cd6ff → primary_container #009dc1 at 135°, bold dark `on_primary` text, `xl` radius. Use it for the page's main CTA.
   - `variant="default"` is the ghost secondary style. Destructive confirms use `color="red" variant="filled"`.
@@ -93,6 +129,13 @@ docker compose exec frontend npx tsc --noEmit
 - **Charts** (also follow the dataviz rules: one axis, legends for 2+ series, deltas with an arrow and sign, never color alone):
   - Single-series trend lines and areas use `var(--trend)` (= primary #4cd6ff) with `fillOpacity={0.2}`.
   - Paired series use `--series-1` #009dc1 (income/values) and `--series-2` #d9762b (expenses). This pair passed the palette validator on #272a31. Primary itself is too light (OKLCH L 0.82) to sit beside another hue, so don't swap it in.
+  - "Where gross pay goes" uses take-home `--series-1`, then `--split-retirement` #8f74e6, `--split-tax` #d9762b, `--split-insurance` #cc5f9a, and the neutral `--split-other` #6f7a80. This set passed the validator on all pairs. Blue and pink are a borderline 7.0 for deuteranopia, which is allowed because every segment is labeled with its amount.
+  - **Category colors:**
+    - Each category stores a `color` key (`CategoryColor`: blue, orange, teal, violet, gold, pink, green, plum, gray), mapped to `--cat-*` hexes in `styles.css` via `components/CategoryColor.tsx`.
+    - The eight hues pass the validator for adjacent pairs only. All-pairs separation is impossible at eight, so a category's color is always shown with its name (badge dot, legend row). Never color alone.
+    - New categories get the least-used color for their kind (`next_color`), and users recolor on the Categories page.
+    - Badges are neutral gray with a colored dot, so text stays in text color.
+  - **Budget expenses donut** (`ExpenseDonut`): largest first, clockwise from 12 o'clock, 2° gaps, total in the center, and a legend with amount and share. More than 8 categories fold the smallest into a gray "Other".
   - `--delta-up` = `secondary` #40e56c and `--delta-down` = `tertiary_container` #ff5353 are for gains/losses and over-budget status only, never series colors.
   - Solid recessive gridlines: `gridAxis="x" strokeDasharray="0"`. Legends keep Income before Expenses via `SERIES_ORDER`.
 - Recharts must stay on 3.x: Mantine charts 8 wraps series in Fragments, which recharts 2 doesn't render.

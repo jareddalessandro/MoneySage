@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import BudgetItem, Category, Transaction
+from app.models import BudgetItem, Category, CategoryColor, CategoryKind, Transaction
 from app.schemas import CategoryIn, CategoryOut, CategoryUpdate
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
@@ -17,6 +17,19 @@ def get_category(db: Session, category_id: int) -> Category:
     return category
 
 
+def next_color(db: Session, kind: CategoryKind) -> CategoryColor:
+    """The palette color used least by active categories of this kind (palette order breaks ties)."""
+    counts = dict(
+        db.execute(
+            select(Category.color, func.count())
+            .where(Category.kind == kind, Category.is_archived.is_(False))
+            .group_by(Category.color)
+        ).all()
+    )
+    palette = [c for c in CategoryColor if c != CategoryColor.gray]
+    return min(palette, key=lambda c: (counts.get(c, 0), palette.index(c)))
+
+
 @router.get("", response_model=list[CategoryOut])
 def list_categories(include_archived: bool = False, db: Session = Depends(get_db)):
     query = select(Category).order_by(Category.kind, Category.name)
@@ -27,7 +40,7 @@ def list_categories(include_archived: bool = False, db: Session = Depends(get_db
 
 @router.post("", response_model=CategoryOut, status_code=201)
 def create_category(body: CategoryIn, db: Session = Depends(get_db)):
-    category = Category(name=body.name.strip(), kind=body.kind)
+    category = Category(name=body.name.strip(), kind=body.kind, color=body.color or next_color(db, body.kind))
     db.add(category)
     try:
         db.commit()
@@ -42,6 +55,8 @@ def update_category(category_id: int, body: CategoryUpdate, db: Session = Depend
     category = get_category(db, category_id)
     if body.name is not None:
         category.name = body.name.strip()
+    if body.color is not None:
+        category.color = body.color
     if body.is_archived is not None:
         category.is_archived = body.is_archived
     try:
