@@ -28,13 +28,15 @@ docker compose exec frontend npx tsc --noEmit
 
 **Backend:** FastAPI + SQLAlchemy 2 + Alembic + psycopg 3, Python 3.12, in `backend/app/`.
 
-- **`models.py`:** Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun, CreditCard. Enums are stored as VARCHAR (`native_enum=False`).
-- **`routers/`:** one router per tab (`budget`, `transactions` for the income statement, `balance_sheet`, `stocks`, `categories`, `credit_cards`). There's no Dashboard: the user removed it, and `/` redirects to Budget.
+- **`models.py`:** Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun, CreditCard, Company, CompanyMember, CompanyProduct, CompanyEntry, RevenueShare, RevenueShareMonth. Enums are stored as VARCHAR (`native_enum=False`).
+- **`routers/`:** one router per tab (`budget`, `transactions` for the income statement, `balance_sheet`, `stocks`, `categories`, `credit_cards`, `companies`). There's no Dashboard: the user removed it, and `/` redirects to Budget.
 - **`services/`:**
   - `budget.py`: normalizes frequencies to monthly amounts.
   - `prices.py`: yfinance fetching and refresh runs.
   - `portfolio.py`: valuation, holdings → balance-sheet sync, history.
   - `scheduler.py`: APScheduler.
+  - `revenue_shares.py`: revenue-share months, totals, cost-of-revenue rule, and the payee statement.
+  - `company_statements.py`: year-end statements. `documents.py`: the PDF/Excel helpers both use.
 - **`months.py`:** months are `"YYYY-MM"` in the API and the 1st of the month in the DB.
 - **`seed.py`:** inserts the 26 default categories when the table is empty.
 
@@ -97,6 +99,42 @@ docker compose exec frontend npx tsc --noEmit
   - **Never add card numbers, CVVs, logins or passwords.** The page tells users not to enter them.
   - `payment_url` is normalized server-side: "chase.com" becomes `https://chase.com`, and non-web schemes (e.g. `javascript:`) are rejected. Links open in a new tab with `rel="noopener noreferrer"`.
   - It isn't linked to Balance Sheet credit card accounts yet.
+- **Companies** (`Company`, `CompanyMember`, `CompanyEntry`, `/api/companies`, `pages/Companies.tsx` + `pages/Company.tsx`):
+  - Businesses the household has a stake in, kept **separate from household finances**: company income and expenses don't touch the Budget, Income Statement or Balance Sheet.
+  - The sidebar lists each company as its own link under Companies (`/companies/:id`). `/companies` is the overview.
+  - Members hold `equity_percent` (0-100, `Numeric(7,4)`). A company's members can't total more than 100% (400 on add or edit). Under 100% is allowed, and the page shows the unassigned part.
+  - Entries have a `kind`: `income`, `expense`, `contribution`, `distribution` or `funding` (see revenue-share funding below), with positive amounts.
+    - Contributions are capital a member put in, not income. Distributions are money paid out to a member, not expenses. Neither affects net profit or the monthly chart.
+    - Both are "member kinds" (`MEMBER_KINDS`, defined on the backend and in `types.ts`). They require `member_id`, which must belong to the same company, and the server clears `category` on them.
+    - Income and expenses have a free-text `category` (the form suggests ones already used), and the server clears `member_id` on them.
+  - A member with contributions or distributions can't be deleted (409). Deleting a company deletes its members, products, revenue shares and entries.
+  - **Products** (`CompanyProduct`, optional, e.g. each app): income and expense entries can carry `product_id` (cleared on member kinds; must be the same company's). A product used by entries or a revenue share can't be deleted (409). The summary's `products` has one row per product (income, cost of revenue, other expenses, net) plus "No product" when anything is untagged; it's empty without products.
+  - **Revenue shares** (`RevenueShare`): agreements to pay a non-member a percentage of revenue (the user's cases: an investor gets 10% of one app's revenue after platform fees, forever; a sales consultant gets 20% of revenue from customers he refers). They're expenses, never distributions.
+    - `basis="income"`: the rate applies to recorded income between the start and end dates (one product's if `product_id` is set, else the whole company's), less expenses in `deduct_categories` (platform fees). The user records income through Stripe/app stores, and "gross" in their contracts means after platform fees.
+    - `basis="reported"`: the rate applies to revenue entered per month (`RevenueShareMonth`, `PUT .../months`; null clears a month). Used because referred-customer revenue isn't tagged per entry (the user declined per-customer/referral tagging). `deduct_categories` is cleared for this basis. Finished months with nothing entered are listed in `missing_months`.
+    - Each month: base = max(revenue − fees, 0), earned = base × rate rounded half up to the cent. Payments are expense entries with `revenue_share_id` (only expenses keep it). Due = everything earned − everything paid through today; negative means paid ahead. An agreement with payments can't be deleted (409). No cap field: the user's deals don't have one.
+    - **Funding** (`kind="funding"`, requires `revenue_share_id`; the server clears category, product and member): money a payee paid the company for their share. The user's investor sends money that the LLC uses to pay its data provider, and the user chose to treat it as a **liability for the sale of future revenue, repaid as royalty payments are remitted**, not income.
+      - `revenue_shares.repayments()` allocates per agreement in date order (funding before payments on the same day): each payment repays what's still owed, and only the rest is an expense. Funding after the balance hit zero starts a new balance; earlier payments stay expenses.
+      - Everywhere profit is computed (company list, summary incl. monthly chart, cost of revenue, products, statements) uses `expensed()` = amount − repaid part. Revenue-share earned/paid/due is unchanged: payments are still payments to the payee. Funding is never income, so it never enters a share's base.
+      - The summary has `funding_received`/`funding_repaid` for the year, entries carry `funding_repaid`, and agreements have `funding_received`/`funding_repaid`/`funding_outstanding` (all time). Statements add a "Revenue-share funding" roll-forward (beginning, received, repaid, owed) and funding lines in the cash summary; the payee statement adds a Funding section when they've funded anything.
+    - **Cost of revenue** = expenses linked to a revenue share, or in any agreement's payment `category` or `deduct_categories` (case-insensitive). It's part of expenses (`summary.cost_of_revenue`), and the statements split it out with a gross profit line.
+    - **Payee statement** (`GET .../revenue-shares/{id}/statement?month=YYYY-MM&format=pdf|xlsx`): the month's revenue, fees, base and share, the account (opening balance, earned, payments, balance due), payments listed, and the year to date by month. It never includes the agreement's private `notes`. The current month runs through today; future months and months before the start return 400. The user plans to send these monthly.
+  - `/summary?year=` returns the year's totals, 12 monthly income/expense points, and per-member figures:
+    - contributions and distributions, for that year and all time
+    - "share of profit" = the year's net × equity %, a paper entitlement, not money paid out
+  - The Owners table shows contributed and distributed for the year, share of profit, and "net invested" (all-time contributions − all-time distributions, which can go negative).
+  - **Year-end statements** (`services/company_statements.py`, `GET /api/companies/{id}/statements?year=&format=pdf|xlsx`, the Export menu on the company page):
+    - Cash basis, built only from recorded entries. Contents:
+      - income statement (by category, largest first, "Uncategorized" last), with cost of revenue and gross profit when there is any
+      - statement of members' capital: beginning + contributions + share of profit − distributions = ending
+      - results by product (when the company has products) and revenue shares (earned and paid in the period, due at its end)
+      - revenue-share funding (the liability roll-forward), when any was received
+      - cash summary
+      - transaction detail
+    - Beginning capital and beginning cash come from all entries before Jan 1. Profit is allocated by **current** ownership % for every year, since ownership history isn't kept; the statements say so. Profit not allocated because ownership is under 100% is noted.
+    - The current year is labeled year to date (through today), and its file name says "YTD".
+    - The PDF uses reportlab. User text goes through `escape()` because Paragraph parses markup. The Excel file uses openpyxl and has four sheets, with SUM formulas for totals.
+    - Both libraries are pinned in `requirements.txt`. After changing requirements, run `docker compose up -d --build backend`.
 - **Statement import (planned, not built):** the user wants to upload checking/savings statements and have them parsed into transactions. `Transaction` already has `account_id`, `source` and `import_hash` (unique) for this. Don't build it until the user asks.
 
 ### Tests

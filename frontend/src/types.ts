@@ -228,3 +228,161 @@ export interface CreditCard {
 }
 
 export type CreditCardInput = Omit<CreditCard, 'id'>;
+
+// ---------- Companies ----------
+
+export interface CompanyMember {
+  id: number;
+  name: string;
+  /** 0-100. A company's members never total more than 100. */
+  equity_percent: number;
+}
+
+export interface CompanyProduct {
+  id: number;
+  name: string;
+  description: string | null;
+}
+
+export type CompanyProductInput = Omit<CompanyProduct, 'id'>;
+
+export interface Company {
+  id: number;
+  name: string;
+  description: string | null;
+  members: CompanyMember[];
+  products: CompanyProduct[];
+}
+
+export type CompanyInput = { name: string; description: string | null };
+export type CompanyMemberInput = Omit<CompanyMember, 'id'>;
+
+export interface CompanyListItem extends Omit<Company, 'products'> {
+  year: number;
+  income: number;
+  expenses: number;
+  net: number;
+  contributions_total: number;
+  distributions_total: number;
+}
+
+/** funding: money a revenue-share payee paid for their share. A liability repaid by payments to them, not income. */
+export type CompanyEntryKind = 'income' | 'expense' | 'contribution' | 'distribution' | 'funding';
+
+/** Entry kinds that belong to a member rather than a category. */
+export const MEMBER_KINDS: CompanyEntryKind[] = ['contribution', 'distribution'];
+
+export interface CompanyEntry {
+  id: number;
+  kind: CompanyEntryKind;
+  date: string;
+  description: string;
+  amount: number;
+  /** Income and expenses only. */
+  category: string | null;
+  /** Contributions and distributions only: who put the money in or was paid. */
+  member_id: number | null;
+  /** Income and expenses only. */
+  product_id: number | null;
+  /** Set on an expense that pays a revenue share, and on funding (required) from its payee. */
+  revenue_share_id: number | null;
+  notes: string | null;
+  /** On a revenue-share payment: the part that repaid funding, so isn't an expense. */
+  funding_repaid?: number | null;
+}
+
+export type CompanyEntryInput = Omit<CompanyEntry, 'id' | 'funding_repaid'>;
+
+export interface CompanyMemberSummary {
+  member_id: number;
+  name: string;
+  equity_percent: number;
+  contributed_year: number;
+  contributed_total: number;
+  distributed_year: number;
+  distributed_total: number;
+  /** The year's net profit times their equity. A paper share, not money paid out. */
+  profit_share: number;
+}
+
+export interface CompanyProductSummary {
+  product_id: number | null;
+  name: string;
+  income: number;
+  cost_of_revenue: number;
+  other_expenses: number;
+  net: number;
+}
+
+export interface CompanySummary {
+  company_id: number;
+  year: number;
+  income: number;
+  expenses: number;
+  net: number;
+  contributions_year: number;
+  contributions_total: number;
+  distributions_year: number;
+  distributions_total: number;
+  equity_assigned: number;
+  /** Revenue-share payments and the fee categories agreements subtract. Part of `expenses`. */
+  cost_of_revenue: number;
+  /** Revenue-share funding received this year (a liability, not income). */
+  funding_received: number;
+  /** The part of this year's revenue-share payments that repaid funding. Not in `expenses`. */
+  funding_repaid: number;
+  months: { month: string; income: number; expenses: number }[];
+  members: CompanyMemberSummary[];
+  /** One row per product, then "No product" (product_id null) if anything is untagged. Empty without products. */
+  products: CompanyProductSummary[];
+  /** Years with entries, newest first. */
+  years: number[];
+  income_categories: string[];
+  expense_categories: string[];
+}
+
+/** income: a % of recorded income (optionally one product's) after fee categories. reported: a % of revenue entered monthly. */
+export type RevenueShareBasis = 'income' | 'reported';
+
+export interface RevenueShareInput {
+  payee: string;
+  basis: RevenueShareBasis;
+  product_id: number | null;
+  rate_percent: number;
+  /** Income basis: expense categories subtracted before the rate applies (platform fees). */
+  deduct_categories: string[];
+  start_date: string;
+  end_date: string | null;
+  /** Category for payment entries. */
+  category: string;
+  notes: string | null;
+}
+
+export interface RevenueShare extends RevenueShareInput {
+  id: number;
+  terms: string;
+  earned_year: number;
+  paid_year: number;
+  earned_total: number;
+  paid_total: number;
+  /** Earned minus paid, all time. Negative means overpaid or paid ahead. */
+  balance_due: number;
+  /** Reported basis: finished months with no revenue entered ('YYYY-MM'), oldest first. */
+  missing_months: string[];
+  /** Funding received from the payee, repaid by payments, and still owed, all time. */
+  funding_received: number;
+  funding_repaid: number;
+  funding_outstanding: number;
+}
+
+export interface RevenueShareMonth {
+  month: string;
+  /** Reported basis: null when nothing's been entered. */
+  revenue: number | null;
+  deductions: number;
+  base: number;
+  earned: number;
+  paid: number;
+  /** Balance due at the end of the month. */
+  balance: number;
+}

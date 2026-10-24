@@ -81,6 +81,25 @@ class AssetType(str, enum.Enum):
 CASH_TICKER = "CASH"
 
 
+class CompanyEntryKind(str, enum.Enum):
+    income = "income"
+    expense = "expense"
+    # Money a member put into the company. Not income: it's capital, tracked per member.
+    contribution = "contribution"
+    # Money paid out of the company to a member (a draw or profit distribution). Not an expense.
+    distribution = "distribution"
+    # Money a revenue-share payee paid the company for their share (a sale of future revenue). Not income:
+    # it's a liability, repaid by the payments made to that payee. Always linked to the agreement.
+    funding = "funding"
+
+
+class RevenueShareBasis(str, enum.Enum):
+    # A percentage of the company's recorded income (optionally one product's), less any fee categories.
+    income = "income"
+    # A percentage of revenue entered by hand each month, e.g. sales from customers someone referred.
+    reported = "reported"
+
+
 class Category(Base):
     __tablename__ = "categories"
     __table_args__ = (UniqueConstraint("name", "kind"),)
@@ -237,5 +256,118 @@ class CreditCard(Base):
     annual_fee_month: Mapped[int | None] = mapped_column(Integer)
     # Short benefit lines in display order, e.g. "3% back on dining".
     benefits: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Company(Base):
+    """A business the household has a stake in, tracked separately from household finances."""
+
+    __tablename__ = "companies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    members: Mapped[list["CompanyMember"]] = relationship(
+        cascade="all, delete-orphan", order_by="CompanyMember.name", lazy="selectin"
+    )
+    products: Mapped[list["CompanyProduct"]] = relationship(
+        cascade="all, delete-orphan", order_by="CompanyProduct.name", lazy="selectin"
+    )
+
+
+class CompanyMember(Base):
+    """An owner of a company and their equity stake."""
+
+    __tablename__ = "company_members"
+    __table_args__ = (UniqueConstraint("company_id", "name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    # 0-100, e.g. 33.3333. A company's members never total more than 100.
+    equity_percent: Mapped[Decimal] = mapped_column(Numeric(7, 4), default=Decimal(0), server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CompanyProduct(Base):
+    """Something a company sells (e.g. one app), so income and expenses can be broken out per product."""
+
+    __tablename__ = "company_products"
+    __table_args__ = (UniqueConstraint("company_id", "name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RevenueShare(Base):
+    """An agreement to pay a non-member a percentage of revenue (an investor's share, a sales commission).
+
+    What's earned is calculated per month; payments are expense entries linked by `revenue_share_id`.
+    """
+
+    __tablename__ = "revenue_shares"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    payee: Mapped[str] = mapped_column(String(100))
+    basis: Mapped[RevenueShareBasis] = mapped_column(_enum(RevenueShareBasis))
+    # Income basis: whose income counts (null = all of the company's). Either basis: the product
+    # payments are tagged with.
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("company_products.id", ondelete="RESTRICT"))
+    rate_percent: Mapped[Decimal] = mapped_column(Numeric(7, 4))
+    # Income basis: expense categories subtracted from income before the rate applies (platform fees).
+    deduct_categories: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
+    start_date: Mapped[date] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    # Category given to payment entries; also counted as cost of revenue.
+    category: Mapped[str] = mapped_column(String(80))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RevenueShareMonth(Base):
+    """Revenue entered for one month of a `reported`-basis revenue share."""
+
+    __tablename__ = "revenue_share_months"
+    __table_args__ = (UniqueConstraint("revenue_share_id", "month"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    revenue_share_id: Mapped[int] = mapped_column(ForeignKey("revenue_shares.id", ondelete="CASCADE"), index=True)
+    month: Mapped[date] = mapped_column(Date)  # first of the month
+    revenue: Mapped[Decimal] = mapped_column(MONEY)
+
+
+class CompanyEntry(Base):
+    """One income, expense, member contribution, distribution, or revenue-share funding. Amounts are positive;
+    `kind` decides the meaning."""
+
+    __tablename__ = "company_entries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[CompanyEntryKind] = mapped_column(_enum(CompanyEntryKind))
+    date: Mapped[date] = mapped_column(Date, index=True)
+    description: Mapped[str] = mapped_column(String(255))
+    amount: Mapped[Decimal] = mapped_column(MONEY)
+    # Free-text grouping for income and expenses (e.g. "Software"); null for member entries.
+    category: Mapped[str | None] = mapped_column(String(80))
+    # Who put money in or got paid; set only for contributions and distributions. A member with
+    # entries can't be deleted.
+    member_id: Mapped[int | None] = mapped_column(ForeignKey("company_members.id", ondelete="RESTRICT"))
+    # Income and expenses can belong to a product. A product with entries can't be deleted.
+    product_id: Mapped[int | None] = mapped_column(
+        ForeignKey("company_products.id", ondelete="RESTRICT"), index=True
+    )
+    # Set on an expense that pays a revenue share, and on funding received from its payee. An agreement
+    # with either can't be deleted.
+    revenue_share_id: Mapped[int | None] = mapped_column(
+        ForeignKey("revenue_shares.id", ondelete="RESTRICT"), index=True
+    )
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

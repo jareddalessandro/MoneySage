@@ -8,6 +8,16 @@ import type {
   Category,
   CategoryColor,
   CategoryKind,
+  Company,
+  CompanyEntry,
+  CompanyEntryInput,
+  CompanyInput,
+  CompanyListItem,
+  CompanyMember,
+  CompanyMemberInput,
+  CompanyProduct,
+  CompanyProductInput,
+  CompanySummary,
   CreditCard,
   CreditCardInput,
   Holding,
@@ -18,6 +28,9 @@ import type {
   PortfolioPoint,
   PortfolioSummary,
   RefreshRun,
+  RevenueShare,
+  RevenueShareInput,
+  RevenueShareMonth,
   Transaction,
   TransactionInput,
 } from './types';
@@ -91,5 +104,41 @@ export const api = {
   createCreditCard: (body: CreditCardInput) => request<CreditCard>('POST', '/credit-cards', body),
   updateCreditCard: (id: number, body: CreditCardInput) => request<CreditCard>('PUT', `/credit-cards/${id}`, body),
   deleteCreditCard: (id: number) => request<void>('DELETE', `/credit-cards/${id}`),
+
+  companies: (year?: number) => get<CompanyListItem[]>(`/companies${year ? qs({ year }) : ''}`),
+  company: (id: number) => get<Company>(`/companies/${id}`),
+  createCompany: (body: CompanyInput) => request<Company>('POST', '/companies', body),
+  updateCompany: (id: number, body: CompanyInput) => request<Company>('PUT', `/companies/${id}`, body),
+  deleteCompany: (id: number) => request<void>('DELETE', `/companies/${id}`),
+  companySummary: (id: number, year: number) => get<CompanySummary>(`/companies/${id}/summary${qs({ year })}`),
+  createCompanyMember: (companyId: number, body: CompanyMemberInput) =>
+    request<CompanyMember>('POST', `/companies/${companyId}/members`, body),
+  updateCompanyMember: (companyId: number, id: number, body: CompanyMemberInput) =>
+    request<CompanyMember>('PUT', `/companies/${companyId}/members/${id}`, body),
+  deleteCompanyMember: (companyId: number, id: number) => request<void>('DELETE', `/companies/${companyId}/members/${id}`),
+  companyEntries: (companyId: number, year: number) =>
+    get<CompanyEntry[]>(`/companies/${companyId}/entries${qs({ year })}`),
+  createCompanyEntry: (companyId: number, body: CompanyEntryInput) =>
+    request<CompanyEntry>('POST', `/companies/${companyId}/entries`, body),
+  updateCompanyEntry: (companyId: number, id: number, body: CompanyEntryInput) =>
+    request<CompanyEntry>('PUT', `/companies/${companyId}/entries/${id}`, body),
+  deleteCompanyEntry: (companyId: number, id: number) => request<void>('DELETE', `/companies/${companyId}/entries/${id}`),
+  createCompanyProduct: (companyId: number, body: CompanyProductInput) =>
+    request<CompanyProduct>('POST', `/companies/${companyId}/products`, body),
+  updateCompanyProduct: (companyId: number, id: number, body: CompanyProductInput) =>
+    request<CompanyProduct>('PUT', `/companies/${companyId}/products/${id}`, body),
+  deleteCompanyProduct: (companyId: number, id: number) => request<void>('DELETE', `/companies/${companyId}/products/${id}`),
+  revenueShares: (companyId: number, year: number) =>
+    get<RevenueShare[]>(`/companies/${companyId}/revenue-shares${qs({ year })}`),
+  createRevenueShare: (companyId: number, body: RevenueShareInput) =>
+    request<RevenueShare>('POST', `/companies/${companyId}/revenue-shares`, body),
+  updateRevenueShare: (companyId: number, id: number, body: RevenueShareInput) =>
+    request<RevenueShare>('PUT', `/companies/${companyId}/revenue-shares/${id}`, body),
+  deleteRevenueShare: (companyId: number, id: number) =>
+    request<void>('DELETE', `/companies/${companyId}/revenue-shares/${id}`),
+  revenueShareMonths: (companyId: number, id: number, year: number) =>
+    get<RevenueShareMonth[]>(`/companies/${companyId}/revenue-shares/${id}/months${qs({ year })}`),
+  setRevenueShareMonths: (companyId: number, id: number, months: { month: string; revenue: number | null }[]) =>
+    request<void>('PUT', `/companies/${companyId}/revenue-shares/${id}/months`, { months }),
 
 };

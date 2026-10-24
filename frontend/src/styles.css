@@ -232,6 +232,17 @@ body {
   background-color: rgba(76, 214, 255, 0.06);
 }
 
+/* A whole card that links somewhere (e.g. a company on the Companies page): tonal hover, no border. */
+.tile-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 120ms ease;
+}
+.tile-link:hover {
+  background-color: var(--surface-container-highest);
+}
+
 /* List rows: separated by spacing and a hover tone instead of divider lines. */
 .list-row {
   border-radius: var(--mantine-radius-sm);
