@@ -4,9 +4,18 @@ from decimal import Decimal
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
-from app.models import AccountKind, AssetType, CategoryColor, CategoryKind, DeductionType, Frequency
+from app.models import (
+    AccountKind,
+    AssetType,
+    CategoryColor,
+    CategoryKind,
+    CompanyEntryKind,
+    RevenueShareBasis,
+    DeductionType,
+    Frequency,
+)
 
 
 # Decimals stay exact internally but go out as JSON numbers for the frontend.
@@ -351,3 +360,240 @@ class CreditCardOut(ORMModel):
     annual_fee_month: int | None
     benefits: list[str]
     notes: str | None
+
+
+# ---------- Companies ----------
+
+def _required_text(v: str) -> str:
+    if not v.strip():
+        raise ValueError("Can't be blank")
+    return v.strip()
+
+
+def _blank_to_none(v: str | None) -> str | None:
+    return (v or "").strip() or None
+
+
+class CompanyIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = None
+
+    _name = field_validator("name")(_required_text)
+    _description = field_validator("description")(_blank_to_none)
+
+
+class CompanyMemberIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    equity_percent: Decimal = Field(default=Decimal(0), ge=0, le=100, max_digits=7, decimal_places=4)
+
+    _name = field_validator("name")(_required_text)
+
+
+class CompanyMemberOut(ORMModel):
+    id: int
+    name: str
+    equity_percent: Num
+
+
+class CompanyProductIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = None
+
+    _name = field_validator("name")(_required_text)
+    _description = field_validator("description")(_blank_to_none)
+
+
+class CompanyProductOut(ORMModel):
+    id: int
+    name: str
+    description: str | None
+
+
+class CompanyOut(ORMModel):
+    id: int
+    name: str
+    description: str | None
+    members: list[CompanyMemberOut]
+    products: list[CompanyProductOut]
+
+
+class CompanyEntryIn(BaseModel):
+    kind: CompanyEntryKind
+    date: date
+    description: str = Field(min_length=1, max_length=255)
+    amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    category: str | None = Field(default=None, max_length=80)
+    member_id: int | None = None
+    product_id: int | None = None
+    revenue_share_id: int | None = None
+    notes: str | None = None
+
+    _description = field_validator("description")(_required_text)
+    _optional = field_validator("category", "notes")(_blank_to_none)
+
+
+class CompanyEntryOut(ORMModel):
+    id: int
+    kind: CompanyEntryKind
+    date: date
+    description: str
+    amount: Num
+    category: str | None
+    member_id: int | None
+    product_id: int | None
+    revenue_share_id: int | None
+    notes: str | None
+    # On a revenue-share payment: the part that repays funding from the payee (so isn't an expense).
+    funding_repaid: Num | None = None
+
+
+class CompanyMonth(BaseModel):
+    month: str
+    income: Num
+    expenses: Num
+
+
+class CompanyMemberSummary(BaseModel):
+    member_id: int
+    name: str
+    equity_percent: Num
+    contributed_year: Num
+    contributed_total: Num
+    distributed_year: Num
+    distributed_total: Num
+    # The year's net profit times their equity. A paper share, not money paid out.
+    profit_share: Num
+
+
+class CompanyProductSummary(BaseModel):
+    product_id: int | None
+    name: str
+    income: Num
+    cost_of_revenue: Num
+    # Everything else (operating expenses).
+    other_expenses: Num
+    net: Num
+
+
+class CompanySummary(BaseModel):
+    company_id: int
+    year: int
+    income: Num
+    expenses: Num
+    net: Num
+    contributions_year: Num
+    contributions_total: Num
+    distributions_year: Num
+    distributions_total: Num
+    equity_assigned: Num
+    # Revenue-share payments and the fee categories those agreements subtract. Part of `expenses`.
+    cost_of_revenue: Num
+    # Revenue-share funding received in the year (a liability, not income), and the part of the year's
+    # revenue-share payments that repaid funding (left out of `expenses`).
+    funding_received: Num
+    funding_repaid: Num
+    months: list[CompanyMonth]
+    members: list[CompanyMemberSummary]
+    # One row per product, then "no product" when the company has products and anything is untagged.
+    products: list[CompanyProductSummary]
+    # Years that have entries, newest first, for the year picker.
+    years: list[int]
+    # Categories already used, for suggestions in the entry form.
+    income_categories: list[str]
+    expense_categories: list[str]
+
+
+class CompanyListItem(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    members: list[CompanyMemberOut]
+    year: int
+    income: Num
+    expenses: Num
+    net: Num
+    contributions_total: Num
+    distributions_total: Num
+
+
+class RevenueShareIn(BaseModel):
+    payee: str = Field(min_length=1, max_length=100)
+    basis: RevenueShareBasis = RevenueShareBasis.income
+    product_id: int | None = None
+    rate_percent: Decimal = Field(gt=0, le=100, max_digits=7, decimal_places=4)
+    deduct_categories: list[str] = Field(default_factory=list, max_length=20)
+    start_date: date
+    end_date: date | None = None
+    category: str = Field(default="Revenue share", min_length=1, max_length=80)
+    notes: str | None = None
+
+    _payee = field_validator("payee", "category")(_required_text)
+    _notes = field_validator("notes")(_blank_to_none)
+
+    @field_validator("deduct_categories")
+    @classmethod
+    def _clean_categories(cls, v: list[str]) -> list[str]:
+        seen, out = set(), []
+        for name in (c.strip() for c in v):
+            if name and name.lower() not in seen:
+                if len(name) > 80:
+                    raise ValueError("Category names can be at most 80 characters")
+                seen.add(name.lower())
+                out.append(name)
+        return out
+
+    @model_validator(mode="after")
+    def _check_dates(self):
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("The end date can't be before the start date")
+        return self
+
+
+class RevenueShareOut(ORMModel):
+    id: int
+    payee: str
+    basis: RevenueShareBasis
+    product_id: int | None
+    rate_percent: Num
+    deduct_categories: list[str]
+    start_date: date
+    end_date: date | None
+    category: str
+    notes: str | None
+    # e.g. "10% of App A revenue after App Store fees, starting January 1, 2026".
+    terms: str = ""
+    # Figures for the requested year, and all time through today.
+    earned_year: Num = Decimal(0)
+    paid_year: Num = Decimal(0)
+    earned_total: Num = Decimal(0)
+    paid_total: Num = Decimal(0)
+    # Earned minus paid, all time. Below 0 means it's been overpaid (or paid in advance).
+    balance_due: Num = Decimal(0)
+    # Reported basis: finished months since the start with no revenue entered, oldest first.
+    missing_months: list[str] = []
+    # Funding received from the payee, how much payments have repaid, and what's still owed, all time.
+    funding_received: Num = Decimal(0)
+    funding_repaid: Num = Decimal(0)
+    funding_outstanding: Num = Decimal(0)
+
+
+class RevenueShareMonthOut(BaseModel):
+    month: str
+    # Income basis: the counted income. Reported basis: what was entered, or null if nothing yet.
+    revenue: Num | None
+    deductions: Num
+    base: Num
+    earned: Num
+    paid: Num
+    # Balance due at the end of the month.
+    balance: Num
+
+
+class RevenueShareMonthIn(BaseModel):
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    # Null clears the month.
+    revenue: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+
+
+class RevenueShareMonthsUpdate(BaseModel):
+    months: list[RevenueShareMonthIn] = Field(max_length=120)
