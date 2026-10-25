@@ -14,8 +14,8 @@ interface Slice {
 // Beyond this many slices a donut stops being readable; the smallest fold into "Other".
 const MAX_SLICES = 8;
 
-/** Monthly budgeted expenses by category: donut with the total in the middle and a labeled legend. */
-export function ExpenseDonut({ categories }: { categories: Slice[] }) {
+/** Expenses by category: donut with the total in the middle (over `caption`) and a labeled legend. */
+export function ExpenseDonut({ categories, caption = 'per month' }: { categories: Slice[]; caption?: string }) {
   const sorted = [...categories].sort((a, b) => b.amount - a.amount);
   const slices: Slice[] =
     sorted.length <= MAX_SLICES
@@ -39,7 +39,7 @@ export function ExpenseDonut({ categories }: { categories: Slice[] }) {
             {money(total)}
           </Text>
           <Text size="xs" c="dimmed">
-            per month
+            {caption}
           </Text>
         </Stack>
         <DonutChart

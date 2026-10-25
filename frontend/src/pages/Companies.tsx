@@ -1,4 +1,4 @@
-import { Button, Group, Modal, Paper, SimpleGrid, Stack, Text, Textarea, TextInput } from '@mantine/core';
+import { Box, Button, Group, Modal, Paper, SimpleGrid, Stack, Table, Text, Textarea, TextInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { IconPlus } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { api } from '../api';
-import { EmptyState, PageHeader, StatCard, useAppMutation } from '../components/common';
+import { EmptyState, PageHeader, SectionCard, useAppMutation } from '../components/common';
 import { money, signedMoney } from '../format';
 import type { Company, CompanyInput, CompanyListItem } from '../types';
 
@@ -17,8 +17,6 @@ export default function CompaniesPage() {
   const [adding, setAdding] = useState(false);
   const { data: companies = [], isLoading } = useQuery({ queryKey: ['companies'], queryFn: () => api.companies() });
   const year = companies[0]?.year ?? new Date().getFullYear();
-  const totalNet = companies.reduce((s, c) => s + c.net, 0);
-  const totalContributions = companies.reduce((s, c) => s + c.contributions_total, 0);
 
   return (
     <>
@@ -33,11 +31,9 @@ export default function CompaniesPage() {
       />
 
       {companies.length > 1 && (
-        <SimpleGrid cols={{ base: 1, sm: 3 }} mb="xl">
-          <StatCard label="Companies" value={companies.length} />
-          <StatCard label={`Combined net profit · ${year}`} value={money(totalNet)} footer="Income minus expenses, all companies" />
-          <StatCard label="Member contributions" value={money(totalContributions)} footer="All time, all companies" />
-        </SimpleGrid>
+        <Box mb="xl">
+          <OwnerShares companies={companies} year={year} />
+        </Box>
       )}
 
       {isLoading ? null : companies.length === 0 ? (
@@ -66,6 +62,57 @@ export default function CompaniesPage() {
   );
 }
 
+/**
+ * Each owner's share of profit across the companies they're in (net × ownership, matched by name).
+ * Adding up the companies' own profits would mix stakes held by different people.
+ */
+function OwnerShares({ companies, year }: { companies: CompanyListItem[]; year: number }) {
+  const owners = new Map<string, { stakes: string[]; share: number }>();
+  for (const c of companies) {
+    for (const m of c.members) {
+      const owner = owners.get(m.name) ?? { stakes: [], share: 0 };
+      owner.stakes.push(`${c.name} ${equity(m.equity_percent)}`);
+      owner.share += (c.net * m.equity_percent) / 100;
+      owners.set(m.name, owner);
+    }
+  }
+  if (owners.size === 0) return null;
+  return (
+    <SectionCard title={`Share of profit by owner · ${year}`}>
+      <Table.ScrollContainer minWidth={480}>
+        <Table verticalSpacing={6} highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Owner</Table.Th>
+              <Table.Th>Stakes</Table.Th>
+              <Table.Th ta="right">Share of profit</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {[...owners].map(([name, o]) => (
+              <Table.Tr key={name}>
+                <Table.Td fw={500}>{name}</Table.Td>
+                <Table.Td>
+                  <Text size="sm" c="dimmed">
+                    {o.stakes.join(' · ')}
+                  </Text>
+                </Table.Td>
+                <Table.Td ta="right" className="num" fw={500}>
+                  {signedMoney(Math.round(o.share * 100) / 100)}
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+      <Text size="xs" c="dimmed" mt="sm">
+        Each company's {year} net profit times the owner's share of it, added up for owners in more than one company
+        (matched by name). It's an entitlement on paper, not money paid out.
+      </Text>
+    </SectionCard>
+  );
+}
+
 function CompanyTile({ company: c }: { company: CompanyListItem }) {
   const figure = (label: string, value: string) => (
     <div>
@@ -82,11 +129,10 @@ function CompanyTile({ company: c }: { company: CompanyListItem }) {
           <Text className="headline" fw={700} size="lg" lh={1.25}>
             {c.name}
           </Text>
-          {c.description && (
-            <Text size="sm" c="dimmed" lineClamp={2}>
-              {c.description}
-            </Text>
-          )}
+          {/* Always one line, blank when there's no description, so the figures line up across tiles. */}
+          <Text size="sm" c="dimmed" lineClamp={1} title={c.description ?? undefined}>
+            {c.description || '\u00a0'}
+          </Text>
         </div>
         <SimpleGrid cols={3} spacing="sm">
           {figure(`Income ${c.year}`, money(c.income))}

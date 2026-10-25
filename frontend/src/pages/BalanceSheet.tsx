@@ -36,6 +36,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { api } from '../api';
+import { fittedAxis } from '../chartAxis';
 import {
   confirmDelete,
   Delta,
@@ -84,23 +85,6 @@ function groupTotal(rows: BalanceRow[], subtypes: Set<string>) {
     change,
     pct: change != null && previous > 0 ? change / previous : null,
   };
-}
-
-/**
- * Y-axis range fitted to the data instead of starting at $0, so month-to-month moves are visible:
- * padded so no point sits on the edge, with ticks at round, evenly spaced steps.
- */
-function fittedAxis(values: number[]): { domain: [number, number]; ticks: number[] } | undefined {
-  if (values.length === 0) return undefined;
-  const lo = Math.min(...values);
-  const hi = Math.max(...values);
-  const pad = (hi - lo) * 0.15 || Math.abs(hi) * 0.02 || 1;
-  const rough = (hi - lo + 2 * pad) / 4;
-  const magnitude = 10 ** Math.floor(Math.log10(rough));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((m) => m >= rough)!;
-  const min = Math.floor((lo - pad) / step) * step;
-  const steps = Math.max(4, Math.ceil((hi + pad - min) / step));
-  return { domain: [min, min + step * steps], ticks: Array.from({ length: steps + 1 }, (_, i) => min + step * i) };
 }
 
 type Draft = Record<number, number | ''>;

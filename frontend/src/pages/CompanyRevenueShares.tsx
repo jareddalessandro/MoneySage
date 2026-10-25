@@ -64,7 +64,7 @@ export function RevenueShares({
 
   return (
     <SectionCard
-      title="Revenue shares"
+      title="Revenue or profit shares"
       actions={
         shares.length > 0 && (
           <Button size="xs" variant="default" leftSection={<IconPlus size={14} />} onClick={onAdd}>

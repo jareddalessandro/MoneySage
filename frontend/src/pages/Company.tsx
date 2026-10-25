@@ -4,6 +4,7 @@ import {
   Anchor,
   Autocomplete,
   Badge,
+  Box,
   Button,
   Grid,
   Group,
@@ -40,14 +41,19 @@ import { useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 
 import { api } from '../api';
+import { zeroAxis } from '../chartAxis';
+import { CATEGORY_COLORS } from '../components/CategoryColor';
 import {
   confirmDelete,
   EmptyState,
   PageHeader,
   SectionCard,
+  SortableTh,
   StatCard,
   useAppMutation,
+  type SortDir,
 } from '../components/common';
+import { ExpenseDonut } from '../components/ExpenseDonut';
 import { money, moneyCompact, percent, SERIES_ORDER, signedMoney } from '../format';
 import type {
   Company,
@@ -73,6 +79,64 @@ const KIND_LABELS: Record<CompanyEntryKind, string> = {
   funding: 'Funding',
 };
 
+/**
+ * Dot color per entry type. Income and expenses match the chart's --series-1/--series-2. The five
+ * pass the normal-vision floor on surface_container_high but not all-pairs CVD separation, so the
+ * dot always sits beside the type's name and never carries it alone.
+ */
+const KIND_COLORS: Record<CompanyEntryKind, string> = {
+  income: 'var(--series-1)',
+  expense: 'var(--series-2)',
+  contribution: 'var(--cat-violet)',
+  distribution: 'var(--cat-pink)',
+  funding: 'var(--cat-green)',
+};
+
+/** Neutral badge with a colored dot, so the text stays in text color. */
+function KindBadge({ kind }: { kind: CompanyEntryKind }) {
+  return (
+    <Badge
+      size="sm"
+      variant="light"
+      color="gray"
+      leftSection={<Box w={7} h={7} style={{ borderRadius: '50%', background: KIND_COLORS[kind] }} aria-hidden />}
+    >
+      {KIND_LABELS[kind]}
+    </Badge>
+  );
+}
+
+const KIND_PLURALS: Record<CompanyEntryKind, [string, string]> = {
+  income: ['income entry', 'income entries'],
+  expense: ['expense', 'expenses'],
+  contribution: ['contribution', 'contributions'],
+  distribution: ['distribution', 'distributions'],
+  funding: ['funding entry', 'funding entries'],
+};
+
+const count = (n: number, [one, many]: [string, string]) => `${n} ${n === 1 ? one : many}`;
+const cents = (n: number) => Math.round(n * 100) / 100;
+
+/** What an entry counts for in its kind's total: a payment's part that repaid funding isn't an expense. */
+const counted = (e: CompanyEntry) => (e.kind === 'expense' ? e.amount - (e.funding_repaid ?? 0) : e.amount);
+
+// Category hues in their validated order (gray is kept for "Uncategorized" and the folded "Other").
+const CATEGORY_HUES = CATEGORY_COLORS.filter((c) => c.key !== 'gray').map((c) => c.key);
+
+/** The year's expenses by category, largest first ("Uncategorized" last), colored in palette order. */
+function expensesByCategory(entries: CompanyEntry[]) {
+  const totals = new Map<string, number>();
+  for (const e of entries) {
+    if (e.kind !== 'expense' || counted(e) <= 0) continue;
+    const name = e.category ?? 'Uncategorized';
+    totals.set(name, (totals.get(name) ?? 0) + counted(e));
+  }
+  return [...totals]
+    .map(([name, amount]) => ({ name, amount: cents(amount) }))
+    .sort((a, b) => (a.name === 'Uncategorized' ? 1 : b.name === 'Uncategorized' ? -1 : b.amount - a.amount))
+    .map((c, i) => ({ ...c, color: c.name === 'Uncategorized' ? ('gray' as const) : CATEGORY_HUES[i % CATEGORY_HUES.length] }));
+}
+
 type Filter = 'all' | CompanyEntryKind;
 /** 'all', 'none' (no product), or a product id. */
 type ProductFilter = string;
@@ -80,6 +144,27 @@ type EntryEditing = { entry: CompanyEntry | null; kind: CompanyEntryKind; preset
 type MemberEditing = { member: CompanyMember | null } | null;
 type ProductEditing = { product: CompanyProduct | null } | null;
 type ShareEditing = { share: RevenueShare | null } | null;
+
+const ENTRY_SORT_KEY = 'moneysage.company-entries-sort';
+
+// Date order is a per-browser convenience; storage can be unavailable, so fall back quietly.
+function loadEntrySort(): SortDir {
+  try {
+    const saved = localStorage.getItem(ENTRY_SORT_KEY);
+    if (saved === 'asc' || saved === 'desc') return saved;
+  } catch {
+    /* ignore */
+  }
+  return 'asc';
+}
+
+function saveEntrySort(dir: SortDir) {
+  try {
+    localStorage.setItem(ENTRY_SORT_KEY, dir);
+  } catch {
+    /* ignore */
+  }
+}
 
 export default function CompanyPage() {
   const id = Number(useParams().id);
@@ -95,6 +180,7 @@ export default function CompanyPage() {
   const [monthsShare, setMonthsShare] = useState<RevenueShare | null>(null);
   const [statementShare, setStatementShare] = useState<RevenueShare | null>(null);
   const [productFilter, setProductFilter] = useState<ProductFilter>('all');
+  const [entrySort, setEntrySort] = useState<SortDir>(loadEntrySort);
 
   const { data: company, isError } = useQuery({
     queryKey: ['company', id],
@@ -130,12 +216,21 @@ export default function CompanyPage() {
   const productName = (productId: number | null) => company.products.find((p) => p.id === productId)?.name;
   const payeeName = (shareId: number | null) => shares.find((s) => s.id === shareId)?.payee;
   const hasProducts = company.products.length > 0;
-  const visible = entries.filter(
-    (e) =>
-      (filter === 'all' || e.kind === filter) &&
-      (productFilter === 'all' ||
-        (productFilter === 'none' ? e.product_id == null : e.product_id === Number(productFilter))),
-  );
+  const sign = entrySort === 'asc' ? 1 : -1;
+  const visible = entries
+    .filter(
+      (e) =>
+        (filter === 'all' || e.kind === filter) &&
+        (productFilter === 'all' ||
+          (productFilter === 'none' ? e.product_id == null : e.product_id === Number(productFilter))),
+    )
+    // Same-day entries are ordered by when they were added.
+    .sort((a, b) => sign * (a.date.localeCompare(b.date) || a.id - b.id));
+  const toggleEntrySort = () => {
+    const dir: SortDir = entrySort === 'asc' ? 'desc' : 'asc';
+    setEntrySort(dir);
+    saveEntrySort(dir);
+  };
   const recordPayment = (share: RevenueShare) =>
     setEditingEntry({
       entry: null,
@@ -154,6 +249,22 @@ export default function CompanyPage() {
       kind: 'funding',
       preset: { description: `Funding from ${share.payee}`, revenue_share_id: share.id },
     });
+  const repaidShown = cents(visible.reduce((s, e) => s + (e.kind === 'expense' ? (e.funding_repaid ?? 0) : 0), 0));
+  const entriesTotal =
+    filter === 'all'
+      ? {
+          label: `${count(visible.length, ['entry', 'entries'])} · income minus expenses`,
+          amount: signedMoney(
+            cents(visible.reduce((s, e) => s + (e.kind === 'income' ? e.amount : e.kind === 'expense' ? -counted(e) : 0), 0)),
+          ),
+        }
+      : {
+          label: count(visible.length, KIND_PLURALS[filter]),
+          amount:
+            (filter === 'income' ? '+' : filter === 'expense' ? '−' : '') + money(cents(visible.reduce((s, e) => s + counted(e), 0))),
+        };
+  const categorySlices = expensesByCategory(entries);
+  const showExtras = shares.length === 0 || !hasProducts;
   const hasFunding = shares.some((s) => s.funding_received > 0) || entries.some((e) => e.kind === 'funding');
   const hasActivity = summary?.months.some((m) => m.income || m.expenses);
   const expensesFooter =
@@ -163,6 +274,13 @@ export default function CompanyPage() {
     ]
       .filter(Boolean)
       .join(' · ') || 'What the company spent';
+  // A margin like −248% says little, so a loss is put as what was spent per dollar earned.
+  const netFooter =
+    !summary || summary.income <= 0
+      ? 'Income minus expenses'
+      : summary.net >= 0
+        ? `${percent(summary.net / summary.income)} profit margin`
+        : `Spent ${money(summary.expenses / summary.income)} for every $1 earned`;
 
   return (
     <>
@@ -256,7 +374,7 @@ export default function CompanyPage() {
           <StatCard
             label={`Net profit · ${year}`}
             value={signedMoney(summary.net)}
-            footer={summary.income > 0 ? `${percent(summary.net / summary.income)} profit margin` : 'Income minus expenses'}
+            footer={netFooter}
           />
           <StatCard
             label={`Member contributions · ${year}`}
@@ -274,26 +392,7 @@ export default function CompanyPage() {
       <Stack gap="xl">
         <Grid gutter="lg">
           <Grid.Col span={{ base: 12, lg: 7 }}>
-            <SectionCard
-              title="Owners"
-              actions={
-                <Button size="xs" variant="default" leftSection={<IconUserPlus size={14} />} onClick={() => setEditingMember({ member: null })}>
-                  Add member
-                </Button>
-              }
-            >
-              {summary && (
-                <Owners
-                  summary={summary}
-                  onEdit={(memberId) => setEditingMember({ member: company.members.find((m) => m.id === memberId)! })}
-                  onDelete={(m) => confirmDelete(`member "${m.name}"`, () => removeMember.mutate(m.member_id))}
-                  onAdd={() => setEditingMember({ member: null })}
-                />
-              )}
-            </SectionCard>
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, lg: 5 }}>
-            <SectionCard title={`Income vs. expenses · ${year}`}>
+            <SectionCard title={`Income vs. expenses · ${year}`} fill>
               {summary && hasActivity ? (
                 <BarChart
                   h={260}
@@ -310,7 +409,11 @@ export default function CompanyPage() {
                   withLegend
                   legendProps={{ verticalAlign: 'top', height: 36, itemSorter: SERIES_ORDER }}
                   valueFormatter={(v) => money(v)}
-                  yAxisProps={{ tickFormatter: (v: number) => moneyCompact(v), width: 64 }}
+                  yAxisProps={{
+                    tickFormatter: (v: number) => moneyCompact(v),
+                    width: 64,
+                    ...zeroAxis(summary.months.flatMap((m) => [m.income, m.expenses])),
+                  }}
                   gridAxis="x"
                   strokeDasharray="0"
                   barProps={{ radius: [4, 4, 0, 0] }}
@@ -321,27 +424,20 @@ export default function CompanyPage() {
                 <EmptyState message={`Income and expenses for ${year} will chart here by month.`} />
               )}
             </SectionCard>
+                    </Grid.Col>
+          <Grid.Col span={{ base: 12, lg: 5 }}>
+            <SectionCard title={`Expenses by category · ${year}`} fill>
+              {/* Centered in whatever height the chart beside it sets. */}
+              <Stack justify="center" style={{ flex: 1 }}>
+                {categorySlices.length > 0 ? (
+                  <ExpenseDonut categories={categorySlices} caption={year === thisYear ? 'so far this year' : `in ${year}`} />
+                ) : (
+                  <EmptyState message={`Expenses for ${year} will break down by category here.`} />
+                )}
+              </Stack>
+            </SectionCard>
           </Grid.Col>
         </Grid>
-
-        <RevenueShares
-          company={company}
-          shares={shares}
-          year={year}
-          onAdd={() => setEditingShare({ share: null })}
-          onEdit={(share) => setEditingShare({ share })}
-          onPay={recordPayment}
-          onFund={recordFunding}
-          onMonths={setMonthsShare}
-          onStatement={setStatementShare}
-        />
-
-        <Products
-          company={company}
-          summary={summary}
-          onAdd={() => setEditingProduct({ product: null })}
-          onEdit={(product) => setEditingProduct({ product })}
-        />
 
         <SectionCard
           title={`Entries · ${year}`}
@@ -388,17 +484,19 @@ export default function CompanyPage() {
               }
             />
           ) : (
-            <Table.ScrollContainer minWidth={640} maxHeight={520}>
-              <Table highlightOnHover stickyHeader verticalSpacing="xs">
+            <Table.ScrollContainer minWidth={720}>
+              <Table highlightOnHover verticalSpacing="xs">
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th w={100}>Date</Table.Th>
+                    <SortableTh label="Date" active dir={entrySort} onSort={toggleEntrySort} w={90} />
                     <Table.Th>Description</Table.Th>
-                    <Table.Th w={130}>Type</Table.Th>
-                    <Table.Th>Category or member</Table.Th>
-                    {hasProducts && <Table.Th>Product</Table.Th>}
-                    <Table.Th ta="right">Amount</Table.Th>
-                    <Table.Th w={70} />
+                    <Table.Th w={150}>Type</Table.Th>
+                    <Table.Th w={220}>Category or member</Table.Th>
+                    {hasProducts && <Table.Th w={170}>Product</Table.Th>}
+                    <Table.Th ta="right" w={120}>
+                      Amount
+                    </Table.Th>
+                    <Table.Th w={80} />
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -414,9 +512,7 @@ export default function CompanyPage() {
                         )}
                       </Table.Td>
                       <Table.Td>
-                        <Badge size="sm" variant="light" color="gray">
-                          {KIND_LABELS[e.kind]}
-                        </Badge>
+                        <KindBadge kind={e.kind} />
                       </Table.Td>
                       <Table.Td>
                         {e.kind === 'funding' ? (
@@ -476,10 +572,81 @@ export default function CompanyPage() {
                     </Table.Tr>
                   )}
                 </Table.Tbody>
+                {visible.length > 0 && (
+                  <Table.Tfoot>
+                    <Table.Tr>
+                      <Table.Th>Total</Table.Th>
+                      <Table.Th colSpan={hasProducts ? 4 : 3}>
+                        <Text size="xs" c="dimmed" fw={500}>
+                          {entriesTotal.label}
+                          {repaidShown > 0 && ` · excludes ${money(repaidShown)} that repaid funding`}
+                        </Text>
+                      </Table.Th>
+                      <Table.Th ta="right" className="num">
+                        {entriesTotal.amount}
+                      </Table.Th>
+                      <Table.Th />
+                    </Table.Tr>
+                  </Table.Tfoot>
+                )}
               </Table>
             </Table.ScrollContainer>
           )}
         </SectionCard>
+        {shares.length > 0 && (
+        <RevenueShares
+          company={company}
+          shares={shares}
+          year={year}
+          onAdd={() => setEditingShare({ share: null })}
+          onEdit={(share) => setEditingShare({ share })}
+          onPay={recordPayment}
+          onFund={recordFunding}
+          onMonths={setMonthsShare}
+          onStatement={setStatementShare}
+        />
+        )}
+
+        {hasProducts && (
+        <Products
+          company={company}
+          summary={summary}
+          onAdd={() => setEditingProduct({ product: null })}
+          onEdit={(product) => setEditingProduct({ product })}
+        />
+        )}
+
+        <Grid gutter="lg">
+          <Grid.Col span={{ base: 12, lg: showExtras ? 7 : 12 }}>
+            <SectionCard
+              title="Owners"
+              actions={
+                <Button size="xs" variant="default" leftSection={<IconUserPlus size={14} />} onClick={() => setEditingMember({ member: null })}>
+                  Add member
+                </Button>
+              }
+            >
+              {summary && (
+                <Owners
+                  summary={summary}
+                  onEdit={(memberId) => setEditingMember({ member: company.members.find((m) => m.id === memberId)! })}
+                  onDelete={(m) => confirmDelete(`member "${m.name}"`, () => removeMember.mutate(m.member_id))}
+                  onAdd={() => setEditingMember({ member: null })}
+                />
+              )}
+            </SectionCard>
+                    </Grid.Col>
+          {showExtras && (
+            <Grid.Col span={{ base: 12, lg: 5 }}>
+              <OptionalTracking
+                shares={shares.length === 0}
+                products={!hasProducts}
+                onAddShare={() => setEditingShare({ share: null })}
+                onAddProduct={() => setEditingProduct({ product: null })}
+              />
+            </Grid.Col>
+          )}
+        </Grid>
       </Stack>
 
       <Modal opened={editingCompany} onClose={() => setEditingCompany(false)} title="Edit company">
@@ -554,6 +721,55 @@ export default function CompanyPage() {
         {statementShare && <PayeeStatement key={statementShare.id} companyId={id} share={statementShare} />}
       </Modal>
     </>
+  );
+}
+
+/** Compact stand-in for the revenue share and product sections until the company uses them. */
+function OptionalTracking({
+  shares,
+  products,
+  onAddShare,
+  onAddProduct,
+}: {
+  shares: boolean;
+  products: boolean;
+  onAddShare: () => void;
+  onAddProduct: () => void;
+}) {
+  const row = (title: string, text: string, action: string, onClick: () => void) => (
+    <Group justify="space-between" wrap="nowrap" align="flex-start" gap="md">
+      <div>
+        <Text size="sm" fw={600}>
+          {title}
+        </Text>
+        <Text size="xs" c="dimmed">
+          {text}
+        </Text>
+      </div>
+      <Button size="xs" variant="default" leftSection={<IconPlus size={14} />} onClick={onClick} style={{ flexShrink: 0 }}>
+        {action}
+      </Button>
+    </Group>
+  );
+  return (
+    <SectionCard title="Optional tracking">
+      <Stack gap="lg">
+        {shares &&
+          row(
+            'Revenue or profit shares',
+            "What you owe people who aren't members but get a percentage of revenue or profit, like an investor or a sales commission.",
+            'Add agreement',
+            onAddShare,
+          )}
+        {products &&
+          row(
+            'Products',
+            "See each product's own income, costs, and profit (like each app), then tag entries with it.",
+            'Add product',
+            onAddProduct,
+          )}
+      </Stack>
+    </SectionCard>
   );
 }
 

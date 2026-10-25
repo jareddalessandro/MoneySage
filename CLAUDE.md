@@ -70,7 +70,7 @@ docker compose exec frontend npx tsc --noEmit
 - **Net worth trend** (`/api/balance-sheet/trend`):
   - Returns one point per calendar month, from the first month with any asset balance (so debt-only history doesn't show as negative net worth) through the last recorded month, never a future one.
   - A month with nothing recorded is null. The chart bridges it with `connectNulls` and says so.
-  - The net worth view's y-axis is fitted to the data (`fittedAxis`: padded, with round evenly spaced ticks) rather than starting at $0, which flattened real month-to-month moves. The Assets vs. Liabilities view keeps $0, since it compares two amounts.
+  - The net worth view's y-axis is fitted to the data (`fittedAxis` in `chartAxis.ts`: padded, with round evenly spaced ticks) rather than starting at $0, which flattened real month-to-month moves. The Assets vs. Liabilities view keeps $0, since it compares two amounts.
   - Lines are straight (`curveType="linear"`), never smoothed. A toggle switches to an Assets vs. Liabilities line view (`--series-1` / `--series-2`).
 - **Synced accounts:** accounts with `sync_from_holdings` get their **current-month** snapshot overwritten from linked holdings' value on every price refresh, holding change, and current-month balance-sheet read. Past months freeze. A synced account can't be edited manually in the current month or a future month (the API returns 400). Past months stay editable so history can be typed in.
   - **Month-end capture:** the 5:30 PM ET refresh on the last day writes that day's closes, so normally the frozen month holds its month-end value. In case the app was off then, `refresh_all` calls `finalize_previous_month` after storing quotes. It revalues last month's synced snapshots that haven't been written since local midnight on the 1st, using the last close on or before the month's final day and current share counts. It runs once per snapshot (it bumps `updated_at`), never overrides a snapshot written after the month ended (e.g. a manual edit), and never creates missing months. Backfilling earlier months was considered and declined by the user.
@@ -123,6 +123,13 @@ docker compose exec frontend npx tsc --noEmit
     - contributions and distributions, for that year and all time
     - "share of profit" = the year's net × equity %, a paper entitlement, not money paid out
   - The Owners table shows contributed and distributed for the year, share of profit, and "net invested" (all-time contributions − all-time distributions, which can go negative).
+  - **Company page layout** (`Company.tsx`), top to bottom:
+    - stat cards: a loss shows "Spent $X for every $1 earned" instead of a negative margin
+    - income vs. expenses chart (`zeroAxis`: $0 up to round steps)
+    - expenses by category (`ExpenseDonut`, computed from the year's entries using the expensed amount, colored by rank in palette order, "Uncategorized" gray)
+    - Entries: full length, no inner scroll. Date sorts both ways (saved in localStorage), Type badges have a dot per kind (`KIND_COLORS`), and a Total row follows the filters ("All" shows income minus expenses)
+    - revenue shares and products, only when the company has them; otherwise a compact "Optional tracking" card sits beside Owners
+  - **Companies overview:** when there's more than one company, a "Share of profit by owner" table (each company's net × equity, members matched by name) replaces summed totals, which would mix stakes held by different people. Tiles always reserve a description line so their figures line up.
   - **Year-end statements** (`services/company_statements.py`, `GET /api/companies/{id}/statements?year=&format=pdf|xlsx`, the Export menu on the company page):
     - Cash basis, built only from recorded entries. Contents:
       - income statement (by category, largest first, "Uncategorized" last), with cost of revenue and gross profit when there is any

@@ -100,9 +100,20 @@ export function HeroStat({ label, value, footer }: { label: string; value: React
   );
 }
 
-export function SectionCard({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
+/** `fill` stretches the card to its grid cell's height, so cards side by side line up. */
+export function SectionCard({
+  title,
+  actions,
+  fill,
+  children,
+}: {
+  title: string;
+  actions?: ReactNode;
+  fill?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <Card p="1.1rem">
+    <Card p="1.1rem" h={fill ? '100%' : undefined}>
       <Group justify="space-between" mb="md" wrap="wrap" gap="xs">
         <Text className="headline" fw={700} size="lg">
           {title}
@@ -123,16 +134,18 @@ export function SortableTh({
   dir,
   onSort,
   align = 'left',
+  w,
 }: {
   label: string;
   active: boolean;
   dir: SortDir;
   onSort: () => void;
   align?: 'left' | 'right';
+  w?: number;
 }) {
   const Icon = !active ? IconSelector : dir === 'asc' ? IconChevronUp : IconChevronDown;
   return (
-    <Table.Th ta={align} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+    <Table.Th ta={align} w={w} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <UnstyledButton onClick={onSort} className="sort-button" data-active={active || undefined}>
         <Group gap={4} wrap="nowrap" justify={align === 'right' ? 'flex-end' : 'flex-start'}>
           <span>{label}</span>
