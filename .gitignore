@@ -8,3 +8,6 @@ __pycache__/
 .venv/
 .vscode/
 .idea/
+
+# Real bank statements used as parser examples; never commit them.
+examples/

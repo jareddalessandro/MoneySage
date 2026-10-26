@@ -6,6 +6,7 @@ from app.models import Category, CategoryColor, CategoryKind
 # Default categories and their colors. Eight hues can't cover 26 categories, so related ones
 # share a color (e.g. Housing and Home Maintenance); colors can be changed on the Categories page.
 # The migration that added colors (category colors) uses the same mapping.
+CARD_PAYMENTS = "Credit Card Payments"  # flagged is_card_payments; see Category
 DEFAULT_CATEGORIES: dict[CategoryKind, list[tuple[str, CategoryColor]]] = {
     CategoryKind.income: [
         ("Salary", CategoryColor.blue),
@@ -26,6 +27,7 @@ DEFAULT_CATEGORIES: dict[CategoryKind, list[tuple[str, CategoryColor]]] = {
         ("Healthcare", CategoryColor.pink),
         ("Childcare & Education", CategoryColor.plum),
         ("Debt Payments", CategoryColor.violet),
+        ("Credit Card Payments", CategoryColor.plum),
         ("Subscriptions", CategoryColor.plum),
         ("Shopping", CategoryColor.orange),
         ("Entertainment", CategoryColor.orange),
@@ -45,5 +47,8 @@ def seed_categories(db: Session) -> None:
     if db.scalar(select(Category.id).limit(1)) is not None:
         return
     for kind, entries in DEFAULT_CATEGORIES.items():
-        db.add_all(Category(name=name, kind=kind, color=color) for name, color in entries)
+        db.add_all(
+            Category(name=name, kind=kind, color=color, is_card_payments=name == CARD_PAYMENTS)
+            for name, color in entries
+        )
     db.commit()

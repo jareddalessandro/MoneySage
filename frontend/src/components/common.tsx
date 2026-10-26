@@ -1,5 +1,19 @@
-import { ActionIcon, Card, Group, Paper, Stack, Table, Text, Title, Tooltip, UnstyledButton } from '@mantine/core';
+import {
+  ActionIcon,
+  Card,
+  Group,
+  Paper,
+  SegmentedControl,
+  Select,
+  Stack,
+  Table,
+  Text,
+  Title,
+  Tooltip,
+  UnstyledButton,
+} from '@mantine/core';
 import { MonthPickerInput } from '@mantine/dates';
+import { useMediaQuery } from '@mantine/hooks';
 import { modals } from '@mantine/modals';
 import { notifications } from '@mantine/notifications';
 import {
@@ -16,20 +30,25 @@ import type { ReactNode } from 'react';
 
 import { shiftMonth, signedMoney } from '../format';
 
-export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
+export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
     <Group justify="space-between" align="flex-end" mb="xl" wrap="wrap" gap="sm">
       <div>
-        <Title order={1} fz="1.75rem" lts="-0.01em">
+        <Title order={1} fz={{ base: '1.5rem', sm: '1.75rem' }} lts="-0.01em">
           {title}
         </Title>
         {description && (
-          <Text c="dimmed" size="sm" mt={4}>
+          <Text component="div" c="dimmed" size="sm" mt={4}>
             {description}
           </Text>
         )}
       </div>
-      {actions && <Group gap="xs">{actions}</Group>}
+      {/* On phones the actions get their own full-width row, so buttons don't wrap one per line. */}
+      {actions && (
+        <Group gap="xs" w={{ base: '100%', sm: 'auto' }} className="page-actions">
+          {actions}
+        </Group>
+      )}
     </Group>
   );
 }
@@ -67,15 +86,33 @@ export function Delta({
   );
 }
 
-export function StatCard({ label, value, footer }: { label: string; value: ReactNode; footer?: ReactNode }) {
+/** `compact` trims the padding and number size (not the footer, which stays readable), for a row that
+    shares its width with other cards. */
+export function StatCard({
+  label,
+  value,
+  footer,
+  compact,
+}: {
+  label: string;
+  value: ReactNode;
+  footer?: ReactNode;
+  compact?: boolean;
+}) {
   return (
-    <Paper p="1.1rem" h="100%">
+    <Paper p={compact ? { base: '0.75rem', sm: '0.9rem' } : { base: '0.85rem', sm: '1.1rem' }} h="100%">
       <Text className="label-sm">{label}</Text>
-      <Text className="headline num" fw={800} fz="1.75rem" mt={6} lh={1.15}>
+      <Text
+        className="headline num"
+        fw={800}
+        fz={compact ? { base: '1.2rem', sm: '1.45rem' } : { base: '1.3rem', sm: '1.75rem' }}
+        mt={compact ? 4 : 6}
+        lh={1.15}
+      >
         {value}
       </Text>
       {footer && (
-        <Text component="div" size="sm" c="dimmed" mt={8}>
+        <Text component="div" fz={{ base: 'xs', sm: 'sm' }} c="dimmed" mt={compact ? 6 : 8}>
           {footer}
         </Text>
       )}
@@ -113,7 +150,7 @@ export function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <Card p="1.1rem" h={fill ? '100%' : undefined}>
+    <Card p={{ base: '0.85rem', sm: '1.1rem' }} h={fill ? '100%' : undefined}>
       <Group justify="space-between" mb="md" wrap="wrap" gap="xs">
         <Text className="headline" fw={700} size="lg">
           {title}
@@ -135,6 +172,7 @@ export function SortableTh({
   onSort,
   align = 'left',
   w,
+  className,
 }: {
   label: string;
   active: boolean;
@@ -142,10 +180,11 @@ export function SortableTh({
   onSort: () => void;
   align?: 'left' | 'right';
   w?: number;
+  className?: string;
 }) {
   const Icon = !active ? IconSelector : dir === 'asc' ? IconChevronUp : IconChevronDown;
   return (
-    <Table.Th ta={align} w={w} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+    <Table.Th ta={align} w={w} className={className} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <UnstyledButton onClick={onSort} className="sort-button" data-active={active || undefined}>
         <Group gap={4} wrap="nowrap" justify={align === 'right' ? 'flex-end' : 'flex-start'}>
           <span>{label}</span>
@@ -153,6 +192,34 @@ export function SortableTh({
         </Group>
       </UnstyledButton>
     </Table.Th>
+  );
+}
+
+/** A filter with a few options: segmented buttons, or a dropdown on phones where they wouldn't fit. */
+export function FilterControl({
+  label,
+  value,
+  onChange,
+  data,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  data: { value: string; label: string }[];
+}) {
+  const phone = useMediaQuery('(max-width: 36em)');
+  return phone ? (
+    <Select
+      size="xs"
+      w="100%"
+      aria-label={label}
+      data={data}
+      value={value}
+      onChange={(v) => v && onChange(v)}
+      allowDeselect={false}
+    />
+  ) : (
+    <SegmentedControl size="xs" aria-label={label} value={value} onChange={onChange} data={data} />
   );
 }
 
@@ -169,7 +236,7 @@ export function EmptyState({ message, action }: { message: string; action?: Reac
 
 export function MonthSwitcher({ value, onChange }: { value: string; onChange: (month: string) => void }) {
   return (
-    <Group gap={4} wrap="nowrap">
+    <Group gap={4} wrap="nowrap" className="month-switcher">
       <Tooltip label="Previous month">
         <ActionIcon variant="default" size="lg" aria-label="Previous month" onClick={() => onChange(shiftMonth(value, -1))}>
           <IconChevronLeft size={18} />
@@ -179,7 +246,9 @@ export function MonthSwitcher({ value, onChange }: { value: string; onChange: (m
         value={`${value}-01`}
         onChange={(v) => v && onChange(v.slice(0, 7))}
         valueFormat="MMMM YYYY"
-        w={170}
+        w={{ base: 'auto', xs: 170 }}
+        miw={130}
+        style={{ flex: '1 1 auto' }}
         aria-label="Month"
       />
       <Tooltip label="Next month">

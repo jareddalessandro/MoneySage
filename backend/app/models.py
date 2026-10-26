@@ -111,6 +111,9 @@ class Category(Base):
         _enum(CategoryColor), default=CategoryColor.gray, server_default=CategoryColor.gray.value
     )
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # The one expense category that imported credit card payments go to. In a month whose totals come
+    # from a statement, budget items marked paid_by_card are compared against it as a group.
+    is_card_payments: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -125,6 +128,8 @@ class BudgetItem(Base):
     amount: Mapped[Decimal] = mapped_column(MONEY)
     gross_amount: Mapped[Decimal | None] = mapped_column(MONEY)
     frequency: Mapped[Frequency] = mapped_column(_enum(Frequency))
+    # Expenses only: paid with a credit card, so a bank statement shows it inside a card payment.
+    paid_by_card: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -160,6 +165,8 @@ class Account(Base):
     sync_from_holdings: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     notes: Mapped[str | None] = mapped_column(Text)
+    # Which account in an imported bank statement this is (e.g. "sofi-2845"), remembered from the last import.
+    statement_key: Mapped[str | None] = mapped_column(String(40), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -188,13 +195,64 @@ class Transaction(Base):
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="RESTRICT"))
     is_unexpected: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     notes: Mapped[str | None] = mapped_column(Text)
-    # Import-friendly fields for future bank statement parsing.
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"))
+    # "manual" or "statement" (imported from a bank statement PDF).
     source: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual")
     import_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
+    statement_import_id: Mapped[int | None] = mapped_column(
+        ForeignKey("statement_imports.id", ondelete="CASCADE"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     category: Mapped[Category] = relationship(lazy="joined")
+
+
+class StatementImport(Base):
+    """One uploaded bank statement. Deleting it removes the transactions it created."""
+
+    __tablename__ = "statement_imports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bank: Mapped[str] = mapped_column(String(40))
+    file_name: Mapped[str] = mapped_column(String(255))
+    period_start: Mapped[date] = mapped_column(Date)
+    period_end: Mapped[date] = mapped_column(Date, index=True)
+    # Per statement account: [{key, name, beginning, ending, account_id}] (balances as strings).
+    accounts: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    # Keys of the lines skipped (e.g. transfers), so importing the statement again finds them too.
+    skipped_keys: Mapped[list] = mapped_column(JSONB, default=list, server_default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ImportRule(Base):
+    """What to do with a statement line, learned from the choices made when importing."""
+
+    __tablename__ = "import_rules"
+    __table_args__ = (UniqueConstraint("pattern", "direction"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Normalized description (see statement_import.normalize).
+    pattern: Mapped[str] = mapped_column(String(255))
+    direction: Mapped[str] = mapped_column(String(3))  # "in" (deposit) or "out" (withdrawal)
+    skip: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class MonthSetting(Base):
+    """Per-month choices on the Income Statement."""
+
+    __tablename__ = "month_settings"
+
+    month: Mapped[date] = mapped_column(Date, primary_key=True)  # the 1st of the month
+    # "statement": imported rows are the totals and manual entries only explain them.
+    # "manual": manual entries are the totals and imported rows are ignored.
+    # Null when only notes were saved: the month then uses the default (statement when it has one).
+    totals_from: Mapped[str | None] = mapped_column(String(20))
+    # Free-form notes the household keeps about the month.
+    notes: Mapped[str | None] = mapped_column(Text)
 
 
 class Holding(Base):

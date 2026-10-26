@@ -31,7 +31,7 @@ def test_income_statement_totals(client, category_id):
     lines = {line["name"]: line for line in s["categories"]}
     assert lines["Groceries"] == {
         "category_id": groceries, "name": "Groceries", "kind": "expense", "color": "green",
-        "actual": 210.55, "unexpected": 0, "budgeted": 1000,
+        "actual": 210.55, "unexpected": 0, "budgeted": 1000, "card_items": [],
     }
     assert lines["Home Maintenance"]["unexpected"] == 900
 
@@ -63,3 +63,15 @@ def test_invalid_amount_rejected(client, category_id):
         "date": "2026-03-05", "description": "x", "amount": -5, "category_id": category_id("Groceries"),
     })
     assert response.status_code == 422
+
+
+def test_month_notes(client):
+    def notes(month):
+        return client.get("/api/income-statement", params={"month": month}).json()["notes"]
+
+    assert notes("2026-03") is None
+    assert client.put("/api/income-statement/notes", json={"month": "2026-03", "notes": "  Car repair; Jen's gift  "}).status_code == 204
+    assert notes("2026-03") == "Car repair; Jen's gift"
+    assert notes("2026-04") is None
+    client.put("/api/income-statement/notes", json={"month": "2026-03", "notes": "   "})
+    assert notes("2026-03") is None

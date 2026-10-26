@@ -67,4 +67,5 @@ export const LIABILITY_SUBTYPES: Record<string, string> = {
 export const subtypeLabel = (s: string) => ASSET_SUBTYPES[s] ?? LIABILITY_SUBTYPES[s] ?? s;
 
 /** Keep legend entries in series order (Recharts 3 sorts them alphabetically by default). */
-export const SERIES_ORDER = (item: { value?: unknown }) => (item.value === 'Income' ? 0 : 1);
+const SERIES_RANK: Record<string, number> = { Income: 0, Expenses: 1, Net: 2 };
+export const SERIES_ORDER = (item: { value?: unknown }) => SERIES_RANK[String(item.value)] ?? 3;

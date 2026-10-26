@@ -84,15 +84,19 @@ export function RevenueShares({
         />
       ) : (
         <>
-          <Table.ScrollContainer minWidth={620}>
+          <Table.ScrollContainer minWidth={620} className="phone-fit">
             <Table verticalSpacing={8} highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Payee</Table.Th>
-                  <Table.Th ta="right">Earned {year}</Table.Th>
-                  <Table.Th ta="right">Paid {year}</Table.Th>
+                  <Table.Th ta="right" className="hide-xs">
+                    Earned {year}
+                  </Table.Th>
+                  <Table.Th ta="right" className="hide-xs">
+                    Paid {year}
+                  </Table.Th>
                   <Table.Th ta="right">Due now</Table.Th>
-                  <Table.Th w={150} />
+                  <Table.Th w={{ base: 70, xs: 150 }} />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -104,6 +108,9 @@ export function RevenueShares({
                       </Text>
                       <Text size="xs" c="dimmed">
                         {s.terms}
+                      </Text>
+                      <Text size="xs" c="dimmed" className="show-xs num">
+                        {year}: earned {money(s.earned_year)} · paid {money(s.paid_year)}
                       </Text>
                       {s.funding_received > 0 && (
                         <Text size="xs" mt={2}>
@@ -124,10 +131,10 @@ export function RevenueShares({
                         </Group>
                       )}
                     </Table.Td>
-                    <Table.Td ta="right" className="num">
+                    <Table.Td ta="right" className="num hide-xs">
                       {money(s.earned_year)}
                     </Table.Td>
-                    <Table.Td ta="right" className="num">
+                    <Table.Td ta="right" className="num hide-xs">
                       {money(s.paid_year)}
                     </Table.Td>
                     <Table.Td ta="right" className="num" fw={600}>
@@ -135,9 +142,24 @@ export function RevenueShares({
                     </Table.Td>
                     <Table.Td>
                       <Group gap={4} wrap="nowrap" justify="flex-end">
-                        <Button size="xs" variant="default" leftSection={<IconCash size={14} />} onClick={() => onPay(s)}>
+                        <Button
+                          size="xs"
+                          variant="default"
+                          leftSection={<IconCash size={14} />}
+                          onClick={() => onPay(s)}
+                          className="hide-xs"
+                        >
                           Record payment
                         </Button>
+                        {/* Phones: the same action as an icon, to leave room for the figures. */}
+                        <ActionIcon
+                          variant="default"
+                          aria-label={`Record payment to ${s.payee}`}
+                          onClick={() => onPay(s)}
+                          className="show-xs"
+                        >
+                          <IconCash size={16} />
+                        </ActionIcon>
                         <Menu position="bottom-end">
                           <Menu.Target>
                             <ActionIcon variant="subtle" color="gray" aria-label={`More for ${s.payee}`}>

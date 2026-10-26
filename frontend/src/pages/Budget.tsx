@@ -17,10 +17,11 @@ import {
   Text,
   Textarea,
   TextInput,
+  Tooltip,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { randomId } from '@mantine/hooks';
-import { IconChevronDown, IconPencil, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
+import { IconChevronDown, IconCreditCard, IconPencil, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -127,8 +128,15 @@ export default function BudgetPage() {
 
   const itemTable = (rows: BudgetItem[], kind: CategoryKind) => {
     const sort = sorts[kind];
-    const header = (key: SortKey, label: string, align?: 'right') => (
-      <SortableTh label={label} align={align} active={sort.key === key} dir={sort.dir} onSort={() => sortBy(kind, key)} />
+    const header = (key: SortKey, label: string, align?: 'right', className?: string) => (
+      <SortableTh
+        label={label}
+        align={align}
+        className={className}
+        active={sort.key === key}
+        dir={sort.dir}
+        onSort={() => sortBy(kind, key)}
+      />
     );
     return rows.length === 0 ? (
       <EmptyState
@@ -152,14 +160,14 @@ export default function BudgetPage() {
         }
       />
     ) : (
-      <Table.ScrollContainer minWidth={560}>
+      <Table.ScrollContainer minWidth={560} className="phone-fit">
         <Table highlightOnHover verticalSpacing="xs">
           <Table.Thead>
             <Table.Tr>
               {header('name', 'Name')}
-              {header('category', 'Category')}
-              {header('amount', kind === 'income' ? 'Take-home' : 'Amount', 'right')}
-              <Table.Th>How often</Table.Th>
+              {header('category', 'Category', undefined, 'hide-xs')}
+              {header('amount', kind === 'income' ? 'Take-home' : 'Amount', 'right', 'hide-xs')}
+              <Table.Th className="hide-xs">How often</Table.Th>
               {header('monthly', 'Per month', 'right')}
               <Table.Th w={70} />
             </Table.Tr>
@@ -168,7 +176,14 @@ export default function BudgetPage() {
             {sortItems(rows, sort).map((item) => (
               <Table.Tr key={item.id}>
                 <Table.Td>
-                  <Text size="sm">{item.name}</Text>
+                  <Group gap={6} wrap="nowrap">
+                    <Text size="sm">{item.name}</Text>
+                    {item.paid_by_card && (
+                      <Tooltip label="Paid by credit card. In a statement month it's compared with card payments.">
+                        <IconCreditCard size={14} color="var(--mantine-color-dimmed)" aria-label="Paid by card" />
+                      </Tooltip>
+                    )}
+                  </Group>
                   {item.gross_amount != null && (
                     <Text size="xs" c="dimmed" className="num">
                       {paycheckSummary(item)}
@@ -179,14 +194,20 @@ export default function BudgetPage() {
                       {item.notes}
                     </Text>
                   )}
+                  <Stack className="show-xs" gap={4} mt={4}>
+                    <Text size="xs" c="dimmed" className="num">
+                      {money(item.amount)} · {FREQUENCY_LABELS[item.frequency]}
+                    </Text>
+                    <CategoryBadge category={item.category} />
+                  </Stack>
                 </Table.Td>
-                <Table.Td>
+                <Table.Td className="hide-xs">
                   <CategoryBadge category={item.category} />
                 </Table.Td>
-                <Table.Td ta="right" className="num">
+                <Table.Td ta="right" className="num hide-xs">
                   {money(item.amount)}
                 </Table.Td>
-                <Table.Td>{FREQUENCY_LABELS[item.frequency]}</Table.Td>
+                <Table.Td className="hide-xs">{FREQUENCY_LABELS[item.frequency]}</Table.Td>
                 <Table.Td ta="right" className="num" fw={500}>
                   {money(item.monthly_amount)}
                 </Table.Td>
@@ -210,7 +231,8 @@ export default function BudgetPage() {
           </Table.Tbody>
           <Table.Tfoot>
             <Table.Tr>
-              <Table.Th colSpan={4}>Total</Table.Th>
+              <Table.Th>Total</Table.Th>
+              <Table.Th colSpan={3} className="hide-xs" />
               <Table.Th ta="right" className="num">
                 {money(rows.reduce((sum, r) => sum + r.monthly_amount, 0))}
               </Table.Th>
@@ -239,7 +261,7 @@ export default function BudgetPage() {
         }
       />
 
-      <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} mb="xl">
+      <SimpleGrid cols={{ base: 2, md: 4 }} spacing={{ base: 'sm', sm: 'lg' }} mb="xl">
         <StatCard
           label="Monthly income"
           value={money(summary?.monthly_income)}
@@ -338,6 +360,7 @@ function BudgetItemForm({ editing, onDone }: { editing: NonNullable<Editing>; on
       amount: item?.amount ?? ('' as number | ''),
       frequency: item?.frequency ?? ((editing.paycheck ? 'biweekly' : 'monthly') as Frequency),
       notes: item?.notes ?? '',
+      paid_by_card: item?.paid_by_card ?? false,
       breakdown: isPaycheck(editing),
       gross_amount: item?.gross_amount ?? ('' as number | ''),
       deductions: (item?.deductions ?? []).map((d): DeductionRow => ({ ...d, key: randomId() })),
@@ -381,6 +404,7 @@ function BudgetItemForm({ editing, onDone }: { editing: NonNullable<Editing>; on
             amount: v.amount as number,
             frequency: v.frequency,
             notes: v.notes.trim() || null,
+            paid_by_card: kind === 'expense' && v.paid_by_card,
             gross_amount: paycheck ? (v.gross_amount as number) : null,
             deductions: paycheck
               ? v.deductions.map((d) => ({
@@ -549,6 +573,13 @@ function BudgetItemForm({ editing, onDone }: { editing: NonNullable<Editing>; on
           </Box>
         )}
 
+        {kind === 'expense' && (
+          <Checkbox
+            label="Paid by credit card"
+            description="Bank statements only show this inside a card payment, so it's compared with card payments instead of its category."
+            {...form.getInputProps('paid_by_card', { type: 'checkbox' })}
+          />
+        )}
         <Textarea label="Notes" autosize minRows={1} {...form.getInputProps('notes')} />
         <Group justify="flex-end">
           <Button type="submit" loading={save.isPending}>

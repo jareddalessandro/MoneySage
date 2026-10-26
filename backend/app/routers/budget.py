@@ -22,6 +22,7 @@ def to_out(item: BudgetItem) -> BudgetItemOut:
         frequency=item.frequency,
         monthly_amount=monthly_amount(item.amount, item.frequency),
         notes=item.notes,
+        paid_by_card=item.paid_by_card,
         gross_amount=item.gross_amount,
         monthly_gross_amount=None if item.gross_amount is None else monthly_amount(item.gross_amount, item.frequency),
         deductions=item.deductions,
@@ -39,6 +40,7 @@ def apply(db: Session, item: BudgetItem, body: BudgetItemIn) -> None:
             raise HTTPException(400, "Take-home pay can't be more than gross pay")
     for key, value in body.model_dump(exclude={"deductions"}).items():
         setattr(item, key, value)
+    item.paid_by_card = body.paid_by_card and category.kind == CategoryKind.expense
     item.deductions = [
         PaycheckDeduction(
             name=d.name.strip(),

@@ -28,7 +28,7 @@ const NAV = [
   { to: '/budget', label: 'Budget', icon: IconTargetArrow },
   { to: '/income-statement', label: 'Income Statement', icon: IconReceipt2 },
   { to: '/balance-sheet', label: 'Balance Sheet', icon: IconScale },
-  { to: '/stocks', label: 'Stocks', icon: IconChartLine },
+  { to: '/investments', label: 'Investments', icon: IconChartLine },
   { to: '/credit-cards', label: 'Credit Card Info', icon: IconCreditCard },
   { to: '/companies', label: 'Companies', icon: IconBriefcase },
   { to: '/settings', label: 'Categories', icon: IconSettings },
@@ -96,7 +96,9 @@ export default function App() {
           <Route path="/budget" element={<BudgetPage />} />
           <Route path="/income-statement" element={<IncomeStatementPage />} />
           <Route path="/balance-sheet" element={<BalanceSheetPage />} />
-          <Route path="/stocks" element={<StocksPage />} />
+          <Route path="/investments" element={<StocksPage />} />
+          {/* The tab used to be called Stocks; keep old links (and their ?account=) working. */}
+          <Route path="/stocks" element={<StocksRedirect />} />
           <Route path="/credit-cards" element={<CreditCardsPage />} />
           <Route path="/companies" element={<CompaniesPage />} />
           <Route path="/companies/:id" element={<CompanyPage />} />
@@ -106,6 +108,11 @@ export default function App() {
       </AppShell.Main>
     </AppShell>
   );
+}
+
+function StocksRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/investments${search}`} replace />;
 }
 
 function Logo() {

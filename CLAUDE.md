@@ -28,8 +28,8 @@ docker compose exec frontend npx tsc --noEmit
 
 **Backend:** FastAPI + SQLAlchemy 2 + Alembic + psycopg 3, Python 3.12, in `backend/app/`.
 
-- **`models.py`:** Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun, CreditCard, Company, CompanyMember, CompanyProduct, CompanyEntry, RevenueShare, RevenueShareMonth. Enums are stored as VARCHAR (`native_enum=False`).
-- **`routers/`:** one router per tab (`budget`, `transactions` for the income statement, `balance_sheet`, `stocks`, `categories`, `credit_cards`, `companies`). There's no Dashboard: the user removed it, and `/` redirects to Budget.
+- **`models.py`:** Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun, CreditCard, Company, CompanyMember, CompanyProduct, CompanyEntry, RevenueShare, RevenueShareMonth, StatementImport, ImportRule, MonthSetting. Enums are stored as VARCHAR (`native_enum=False`).
+- **`routers/`:** one router per tab (the Investments tab is `stocks`: route `/investments`, `/stocks` redirects there) (`budget`, `transactions` for the income statement, `statements` for statement import, `balance_sheet`, `stocks`, `categories`, `credit_cards`, `companies`). There's no Dashboard: the user removed it, and `/` redirects to Budget.
 - **`services/`:**
   - `budget.py`: normalizes frequencies to monthly amounts.
   - `prices.py`: yfinance fetching and refresh runs.
@@ -37,13 +37,15 @@ docker compose exec frontend npx tsc --noEmit
   - `scheduler.py`: APScheduler.
   - `revenue_shares.py`: revenue-share months, totals, cost-of-revenue rule, and the payee statement.
   - `company_statements.py`: year-end statements. `documents.py`: the PDF/Excel helpers both use.
+  - `statement_parser.py`: reads SoFi statement PDFs (pdfplumber). `statement_import.py`: suggestions, learned rules, saving.
 - **`months.py`:** months are `"YYYY-MM"` in the API and the 1st of the month in the DB.
-- **`seed.py`:** inserts the 26 default categories when the table is empty.
+- **`seed.py`:** inserts the 27 default categories (incl. Credit Card Payments) when the table is empty.
 
 **Frontend:** React 19 + TypeScript + Vite + Mantine 8 + TanStack Query + recharts 3, in `frontend/src/`.
 
 - `pages/` has one file per tab.
-- `components/common.tsx` holds the shared pieces: PageHeader, StatCard, HeroStat, SectionCard, Delta, MonthSwitcher, `useAppMutation`, `confirmDelete`.
+- `components/common.tsx` holds the shared pieces: PageHeader, StatCard, HeroStat, SectionCard, Delta, MonthSwitcher, FilterControl, `useAppMutation`, `confirmDelete`.
+- `components/StatementImport.tsx` is the upload → review → import modal.
 - `api.ts` / `types.ts` are the typed client. `format.ts` holds the money and month formatters.
 - `theme.ts` + `styles.css` hold the design tokens.
 - Vite proxies `/api` to the backend container.
@@ -52,7 +54,10 @@ docker compose exec frontend npx tsc --noEmit
 
 - **Money:** `NUMERIC(14,2)` / `Decimal` on the backend. Output schemas use the `Num` serializer so values reach JSON as numbers, not strings. Quantities use `Numeric(24,8)`.
 - **Signs are stored positive:** transaction amounts are positive, and category kind (income/expense) decides the sign. Liability balances are also stored positive and subtracted for net worth.
-- **Unexpected items:** `is_unexpected` on a transaction puts it in the "Unexpected items" card on the Income Statement.
+- **Unexpected items:** `is_unexpected` on a transaction puts it in the "Unexpected items" card on the Income Statement. Manual unexpected items are left out of the Transactions table (an imported line flagged unexpected stays). They're entered inline (`QuickUnexpected`, top of the card, no dialog): amount first, Tab, description, Enter (focus returns to the amount). Type and category persist between entries; expenses default to Miscellaneous, income to Other Income. The card shows no dates (the user found them clutter): new items are dated today in the current month, else the month's 1st, and the lists sort newest entry first (by id). The user logs these often, so keep it few-keystroke. The card lists Unexpected expenses and Unexpected income separately (`UnexpectedList`), each with a total of all its items, paginated 8 per page (the user often has 15-30 a month; adding one jumps back to page 1). There's deliberately no net-unexpected figure, and no budget comparison in this card (it duplicated Budget vs. actual's Unexpected items / Everything else columns).
+- **Income Statement layout,** top to bottom: header (statement line with undo and the Totals-from switch under the title), one row of four compact stat cards (lg 8) with the Notes card beside them (lg 4), Unexpected items (full width: the entry row on one line, then the expense and income lists side by side from `md`), Budget vs. actual (full width), the Transactions table, then the chart of this calendar year's months (January through now; income, expenses and net bars) with running YTD income/expenses/net.
+- **Month notes** (`MonthSetting.notes`, `PUT /api/income-statement/notes`, returned as `notes` on the income statement): a free-text box per month (`MonthNotes`) that autosaves 800ms after typing stops, on blur, and when switching months. A `MonthSetting` row can hold only notes (`totals_from` null means "use the default"); clearing the notes of such a row deletes it.
+- **Budget vs. actual card** (`BudgetSummary`): empty until the month has a statement or regular entries (unexpected items alone don't count, since against the budget they'd read as a huge shortfall). one row each for Income and Expenses (the user removed Savings) with Budget, Actual, vs. budget, Unexpected items (the month's unexpected totals) and Everything else (vs. budget minus unexpected). The per-category table sits behind a "By category" switch, off by default and saved in localStorage (`moneysage.budget-by-category`): the user imports statements, so per-category breakdowns aren't useful to them. An earlier "Savings vs. plan" breakdown with top category drivers was rejected for the same reason.
 - **Paychecks:** an income budget item becomes a paycheck when `gross_amount` is set. It then has `PaycheckDeduction` rows (all amounts per paycheck).
   - **`amount` is always take-home**, so budget totals, the surplus, and budget vs. actual on the Income Statement (bank deposits) all stay in take-home terms. Don't switch the budget to gross.
   - **Deduction stages:** type `tax` is always the tax stage (`pre_tax` is forced false). Other types are pre-tax or post-tax by the `pre_tax` flag.
@@ -66,7 +71,7 @@ docker compose exec frontend npx tsc --noEmit
 - **Balance Sheet table:**
   - Assets are split into Cash / Investments / Other assets (`ASSET_GROUPS`, same subtypes as the cards), each with a subtotal on its heading row.
   - Inputs still to fill get `.needs-entry` (primary tint) and an "Enter balance" placeholder, and a count shows by Save. That covers every active non-synced account in the current month, and in past months the ones that had a balance the month before. Future months aren't flagged.
-  - The "From Stocks" badge links to `/stocks?account=<id>`. The Stocks holdings table has an account selector driving the same `?account=` param (`unassigned` for holdings with no account), defaulting to all accounts combined. When filtered, the footer totals and allocation are computed for that account only. The top cards and charts stay portfolio-wide.
+  - The "From Investments" badge links to `/investments?account=<id>`. The Investments holdings table has an account selector driving the same `?account=` param (`unassigned` for holdings with no account), defaulting to all accounts combined. When filtered, the footer totals and allocation are computed for that account only. The top cards and charts stay portfolio-wide.
 - **Net worth trend** (`/api/balance-sheet/trend`):
   - Returns one point per calendar month, from the first month with any asset balance (so debt-only history doesn't show as negative net worth) through the last recorded month, never a future one.
   - A month with nothing recorded is null. The chart bridges it with `connectNulls` and says so.
@@ -142,7 +147,16 @@ docker compose exec frontend npx tsc --noEmit
     - The current year is labeled year to date (through today), and its file name says "YTD".
     - The PDF uses reportlab. User text goes through `escape()` because Paragraph parses markup. The Excel file uses openpyxl and has four sheets, with SUM formulas for totals.
     - Both libraries are pinned in `requirements.txt`. After changing requirements, run `docker compose up -d --build backend`.
-- **Statement import (planned, not built):** the user wants to upload checking/savings statements and have them parsed into transactions. `Transaction` already has `account_id`, `source` and `import_hash` (unique) for this. Don't build it until the user asks.
+- **Statement import** (`/api/statements`, `StatementImport.tsx`): the user's main way to fill the Income Statement. They upload a monthly SoFi PDF (checking + savings + Vaults in one file), review it, and import.
+  - **Parsing:** SoFi's text layer places columns separately, so plain text extraction scrambles rows. `statement_parser` groups words into lines by position and splits columns at the DATE/TYPE/DESCRIPTION/AMOUNT header's x positions. Each account's rows must satisfy beginning + rows = ending; the review shows "Off by $X" otherwise. Only SoFi is supported (400 for other PDFs). The PDF is never stored.
+  - **Two steps:** `POST /preview` (multipart) parses and suggests, saving nothing. `POST /statements` saves the reviewed rows. `DELETE /statements/{id}` undoes an import (its transactions cascade; Balance Sheet balances stay).
+  - **Suggestions,** in order: a remembered `ImportRule` (normalized description + direction "in"/"out"), then transfers between the statement's own accounts ("To Joint Savings", "From Joint checking balance", Vault moves) are skipped, card payments go to the `is_card_payments` category, PAYROLL → Salary, interest → Interest & Dividends, MTG/HOA → Housing, then Other Income / Miscellaneous marked "Not recognized". Every choice at import is saved as a rule, and recategorizing an imported transaction later updates its rule.
+  - **Dedup:** each row's key (`import_hash`) is a hash of bank, account, section, SoFi transaction ID, date and amount. Skipped rows' keys are kept in `StatementImport.skipped_keys`, so re-uploading a statement flags every line as already imported (409 if nothing is new).
+  - **Accounts:** each statement account maps to a Balance Sheet account (remembered in `Account.statement_key`, first guessed by subtype + bank name). By default the import writes the ending balances for the statement month (savings' ending includes its Vaults). Synced accounts can't be picked.
+  - Imported transactions have `source="statement"`, the mapped `account_id`, and `statement_import_id`. Positive rows need income categories, negative rows expense categories.
+- **Totals source per month** (`month_sources` in `transactions.py`, `MonthSetting`, `PUT /api/income-statement/totals-from`): a month with imported rows totals them by default ("Statement"), and manual entries (unexpected or not) then only explain the month; they're shown with "Not in totals". The user can switch a month to "Manual entries", which ignores the imported rows. A month without imported rows always uses manual entries. The trend chart follows each month's choice. Unexpected totals count manual unexpected items in either mode.
+- **Card-paid budget items:** `BudgetItem.paid_by_card` (expenses only; forced false otherwise). In a statement month, Budget vs. actual moves those items' budget into the Credit Card Payments line (`card_items` lists them), since the statement only sees card payments. Manual months compare each category as before. The card category is the one with `is_card_payments` (added by migration on existing installs, by the seed on fresh ones).
+- **`examples/`** holds the user's real statements for parser work. It's gitignored; never commit them or copy them into tests (tests build a synthetic SoFi-layout PDF with reportlab).
 
 ### Tests
 
@@ -178,7 +192,7 @@ docker compose exec frontend npx tsc --noEmit
 - **Spacing:** `mb="xl"` between major page sections and `gutter="lg"` for grids. Cards are padded 1.1rem.
 - **Charts** (also follow the dataviz rules: one axis, legends for 2+ series, deltas with an arrow and sign, never color alone):
   - Single-series trend lines and areas use `var(--trend)` (= primary #4cd6ff) with `fillOpacity={0.2}`.
-  - Paired series use `--series-1` #009dc1 (income/values) and `--series-2` #d9762b (expenses). This pair passed the palette validator on #272a31. Primary itself is too light (OKLCH L 0.82) to sit beside another hue, so don't swap it in.
+  - Paired series use `--series-1` #009dc1 (income/values) and `--series-2` #d9762b (expenses). Income/expense bar charts (Income Statement, company pages) are the exception: the user asked for income green, expenses red, net blue (`--chart-income/expenses/net` = the delta colors and `--series-1`); the legend and fixed bar order carry it for color-blind viewers. `SERIES_ORDER` keeps legends Income, Expenses, Net. This pair passed the palette validator on #272a31. Primary itself is too light (OKLCH L 0.82) to sit beside another hue, so don't swap it in.
   - "Where gross pay goes" uses take-home `--series-1`, then `--split-retirement` #8f74e6, `--split-tax` #d9762b, `--split-insurance` #cc5f9a, and the neutral `--split-other` #6f7a80. This set passed the validator on all pairs. Blue and pink are a borderline 7.0 for deuteranopia, which is allowed because every segment is labeled with its amount.
   - **Category colors:**
     - Each category stores a `color` key (`CategoryColor`: blue, orange, teal, violet, gold, pink, green, plum, gray), mapped to `--cat-*` hexes in `styles.css` via `components/CategoryColor.tsx`.
@@ -188,4 +202,9 @@ docker compose exec frontend npx tsc --noEmit
   - **Budget expenses donut** (`ExpenseDonut`): largest first, clockwise from 12 o'clock, 2° gaps, total in the center, and a legend with amount and share. More than 8 categories fold the smallest into a gray "Other".
   - `--delta-up` = `secondary` #40e56c and `--delta-down` = `tertiary_container` #ff5353 are for gains/losses and over-budget status only, never series colors.
   - Solid recessive gridlines: `gridAxis="x" strokeDasharray="0"`. Legends keep Income before Expenses via `SERIES_ORDER`.
+- **Mobile** (phones are below Mantine's `xs`, 36em / 576px; rules live at the end of `styles.css`):
+  - Modals are full screen. Side-by-side fields in a modal (`Group grow`) stack. Text inputs are 16px so iOS doesn't zoom in on focus.
+  - Stat-card grids are two columns (`cols={{ base: 2, ... }}`), with smaller numbers and padding from `StatCard`/`SectionCard` themselves. Page-header actions get a full-width row.
+  - Tables don't scroll sideways on phones. Mark secondary columns `hide-xs` and repeat their key details under the row's name in a `show-xs` element, and give the `Table.ScrollContainer` `className="phone-fit"` to drop its desktop `minWidth` there. Keep footer cells aligned: split a `colSpan` so the hidden part is its own `hide-xs` cell. Cell padding shrinks, headers wrap, edit/delete icons stack, and long words break (never `.num` text).
+  - Filters with more than ~4 options use `FilterControl` (segmented on desktop, a dropdown on phones).
 - Recharts must stay on 3.x: Mantine charts 8 wraps series in Fragments, which recharts 2 doesn't render.

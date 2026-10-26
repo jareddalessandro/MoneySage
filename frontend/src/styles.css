@@ -16,6 +16,12 @@
   --trend: var(--primary);
   --series-1: #009dc1; /* income, values */
   --series-2: #d9762b; /* expenses */
+  /* Income/expense bar charts (Income Statement, company pages), colored by the user's request: income green, expenses red,
+     net blue (the gain/loss colors, so bars match the +/- figures). Red and green are hard to tell
+     apart with color blindness; the legend and the fixed bar order (income, expenses, net) carry it. */
+  --chart-income: var(--delta-up);
+  --chart-expenses: var(--delta-down);
+  --chart-net: var(--series-1);
   /* Where gross pay goes (with --series-1 as take-home): validated as a set, all pairs. */
   --split-retirement: #8f74e6;
   --split-tax: #d9762b;
@@ -250,4 +256,138 @@ body {
 
 .list-row:hover {
   background-color: var(--surface-container-highest);
+}
+
+/* File drop target: a tonal well instead of a dashed border; brighter while a file is dragged over. */
+.drop-zone {
+  display: block;
+  width: 100%;
+  border-radius: var(--mantine-radius-md);
+  background-color: var(--surface-container-high);
+  transition: background-color 120ms ease;
+}
+.drop-zone:hover,
+.drop-zone[data-over] {
+  background-color: var(--surface-container-highest);
+}
+
+/* A panel inside a glass modal: one tone up from the modal so it reads as a group. */
+.inset-panel.mantine-Paper-root {
+  background-color: rgba(50, 53, 60, 0.6);
+}
+
+/* Rows that are listed but don't count (skipped on import, or outside this month's totals). */
+.row-muted > td:not(.keep-opaque) {
+  opacity: 0.5;
+}
+
+/* Sticky action bar at the bottom of a long modal, so the main button stays in reach. */
+.modal-footer {
+  position: sticky;
+  bottom: calc(-1 * var(--mb-padding, var(--mantine-spacing-md)));
+  margin: 0 calc(-1 * var(--mb-padding, var(--mantine-spacing-md))) calc(-1 * var(--mb-padding, var(--mantine-spacing-md)));
+  padding: var(--mantine-spacing-sm) var(--mb-padding, var(--mantine-spacing-md));
+  background-color: rgba(29, 32, 38, 0.96);
+  z-index: 2;
+}
+
+/* ---------- Phones (below Mantine's xs breakpoint, 36em / 576px) ---------- */
+@media (max-width: 36em) {
+  /* Modals take the whole screen: a floating panel leaves too little room for a form. Near-opaque,
+     since nothing of the page shows around a full-screen panel anyway. */
+  .mantine-Modal-inner {
+    padding: 0 !important;
+  }
+  .mantine-Modal-content {
+    flex: 1 1 100% !important;
+    max-width: 100% !important;
+    min-height: 100dvh;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    background-color: rgba(29, 32, 38, 0.97);
+  }
+
+  /* Side-by-side form fields stack, so each input gets the full width. */
+  .mantine-Modal-body .mantine-Group-root[data-grow] {
+    flex-wrap: wrap;
+  }
+  .mantine-Modal-body .mantine-Group-root[data-grow] > * {
+    flex-basis: 100%;
+    max-width: 100% !important;
+  }
+
+  /* iOS zooms the page into any focused field under 16px; keep text inputs at 16px on phones. */
+  .mantine-Input-input,
+  .mantine-PillsInput-input input {
+    font-size: max(16px, 1em);
+  }
+}
+
+@media (max-width: 36em) {
+  /* Page header actions: the month switcher takes a full row; buttons share the next one when they fit. */
+  .page-actions > .month-switcher {
+    flex: 1 1 100%;
+  }
+  .page-actions > .mantine-Button-root {
+    flex: 1 1 auto;
+  }
+}
+
+/* Hide a secondary table column (or anything else) on phones; its key details are shown elsewhere,
+   e.g. under the row's name (`.show-xs`). */
+@media (max-width: 36em) {
+  .hide-xs {
+    display: none !important;
+  }
+}
+@media (min-width: 36.0625em) {
+  .show-xs {
+    display: none !important;
+  }
+}
+
+/* A wide table whose secondary columns hide on phones: drop its desktop minimum width there. */
+@media (max-width: 36em) {
+  .phone-fit {
+    --table-min-width: 0px !important;
+  }
+}
+
+@media (max-width: 36em) {
+  /* Tighter cell padding so a three- or four-column table fits a phone without scrolling. */
+  .mantine-Table-th,
+  .mantine-Table-td {
+    padding-inline: 6px;
+  }
+  /* Footer labels (e.g. "Income minus expenses") may wrap rather than widen the table. */
+  .mantine-Table-tfoot .mantine-Table-th {
+    white-space: normal;
+  }
+}
+
+@media (max-width: 36em) {
+  /* Headers like "Share of profit" may wrap instead of setting the column's width. */
+  .mantine-Table-th {
+    white-space: normal;
+  }
+  /* The empty header over a row's edit/delete icons sizes to the icons, which stack vertically. */
+  .mantine-Table-th:empty {
+    width: auto !important;
+  }
+  .mantine-Table-td > .mantine-Group-root:has(> .mantine-ActionIcon-root ~ .mantine-ActionIcon-root) {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+}
+
+@media (max-width: 36em) {
+  /* Long unbroken text (an email address, a URL) may break rather than widen a column; numbers never do. */
+  .mantine-Table-td {
+    overflow-wrap: anywhere;
+  }
+  .mantine-Table-td .num,
+  .mantine-Table-td.num {
+    overflow-wrap: normal;
+  }
 }

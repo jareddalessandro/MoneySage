@@ -12,6 +12,8 @@ export interface Category {
   kind: CategoryKind;
   color: CategoryColor;
   is_archived: boolean;
+  /** The category imported credit card payments go to. */
+  is_card_payments: boolean;
 }
 
 export interface BudgetItem {
@@ -22,6 +24,8 @@ export interface BudgetItem {
   frequency: Frequency;
   monthly_amount: number;
   notes: string | null;
+  /** Expenses paid with a credit card; a bank statement only shows them inside card payments. */
+  paid_by_card: boolean;
   /** Pay before deductions. When set, `amount` is take-home pay. */
   gross_amount: number | null;
   monthly_gross_amount: number | null;
@@ -41,6 +45,7 @@ export interface BudgetItemInput {
   amount: number;
   frequency: Frequency;
   notes: string | null;
+  paid_by_card: boolean;
   gross_amount: number | null;
   deductions: Deduction[];
 }
@@ -119,7 +124,9 @@ export interface Transaction {
   is_unexpected: boolean;
   notes: string | null;
   account_id: number | null;
+  /** 'manual' or 'statement' (imported from a bank statement). */
   source: string;
+  statement_import_id: number | null;
 }
 
 export interface TransactionInput {
@@ -140,10 +147,19 @@ export interface StatementCategory {
   actual: number;
   unexpected: number;
   budgeted: number;
+  /** On the card payments line in a statement month: the paid-by-card budget items it covers. */
+  card_items: string[];
 }
+
+/** Which transactions make up a month's totals; the other kind only explains them. */
+export type TotalsFrom = 'statement' | 'manual';
 
 export interface IncomeStatement {
   month: string;
+  totals_from: TotalsFrom;
+  has_statement: boolean;
+  /** The household's own notes about the month. */
+  notes: string | null;
   total_income: number;
   total_expenses: number;
   net: number;
@@ -152,6 +168,64 @@ export interface IncomeStatement {
   budgeted_income: number;
   budgeted_expenses: number;
   categories: StatementCategory[];
+}
+
+export interface PreviewAccount {
+  key: string;
+  name: string;
+  kind: string;
+  last4: string;
+  beginning: number | null;
+  ending: number | null;
+  row_total: number;
+  /** Ending − (beginning + rows); anything but 0 means some lines weren't read. */
+  difference: number | null;
+  account_id: number | null;
+}
+
+export interface PreviewRow {
+  key: string;
+  date: string;
+  account_key: string;
+  section: string;
+  bank_type: string;
+  description: string;
+  /** Signed: deposits positive, withdrawals negative. */
+  amount: number;
+  category_id: number | null;
+  skip: boolean;
+  reason: string;
+  duplicate: boolean;
+}
+
+export interface StatementPreview {
+  bank: string;
+  period_start: string;
+  period_end: string;
+  month: string;
+  accounts: PreviewAccount[];
+  rows: PreviewRow[];
+}
+
+export interface StatementImportInput {
+  bank: string;
+  file_name: string;
+  period_start: string;
+  period_end: string;
+  accounts: Pick<PreviewAccount, 'key' | 'name' | 'beginning' | 'ending' | 'account_id'>[];
+  rows: Pick<PreviewRow, 'key' | 'date' | 'account_key' | 'description' | 'amount' | 'category_id' | 'skip'>[];
+  update_balances: boolean;
+}
+
+export interface StatementImport {
+  id: number;
+  bank: string;
+  file_name: string;
+  period_start: string;
+  period_end: string;
+  accounts: { key: string; name: string; beginning: string | null; ending: string | null; account_id: number | null }[];
+  transaction_count: number;
+  created_at: string;
 }
 
 export interface IncomeTrendPoint {

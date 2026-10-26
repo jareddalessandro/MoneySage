@@ -129,7 +129,7 @@ def save_balances(body: BalanceUpdate, month: str = MONTH, db: Session = Depends
         if account.sync_from_holdings and m >= current_month():
             raise HTTPException(
                 400,
-                f"'{account.name}' is synced from Stocks holdings and can't be edited "
+                f"'{account.name}' is synced from Investments holdings and can't be edited "
                 + ("this month" if m == current_month() else "for a future month"),
             )
         if entry.balance is None:
