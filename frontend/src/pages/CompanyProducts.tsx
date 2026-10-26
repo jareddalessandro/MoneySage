@@ -1,9 +1,9 @@
-import { ActionIcon, Button, Group, Stack, Table, Text, Textarea, TextInput } from '@mantine/core';
+import { Button, Group, Stack, Table, Text, Textarea, TextInput } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 
 import { api } from '../api';
-import { confirmDelete, EmptyState, SectionCard, useAppMutation } from '../components/common';
+import { confirmDelete, EmptyState, RowActions, SectionCard, useAppMutation } from '../components/common';
 import { money, percent, signedMoney } from '../format';
 import type { Company, CompanyProduct, CompanyProductInput, CompanySummary } from '../types';
 
@@ -102,19 +102,18 @@ export function Products({
                       </Table.Td>
                       <Table.Td>
                         {product && (
-                          <Group gap={4} wrap="nowrap" justify="flex-end">
-                            <ActionIcon variant="subtle" color="gray" aria-label={`Edit ${product.name}`} onClick={() => onEdit(product)}>
-                              <IconPencil size={16} />
-                            </ActionIcon>
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              aria-label={`Delete ${product.name}`}
-                              onClick={() => confirmDelete(`product "${product.name}"`, () => remove.mutate(product.id))}
-                            >
-                              <IconTrash size={16} />
-                            </ActionIcon>
-                          </Group>
+                          <RowActions
+                            label={`Actions for ${product.name}`}
+                            actions={[
+                              { label: `Edit ${product.name}`, icon: <IconPencil size={16} />, onClick: () => onEdit(product) },
+                              {
+                                label: `Delete ${product.name}`,
+                                icon: <IconTrash size={16} />,
+                                color: 'red',
+                                onClick: () => confirmDelete(`product "${product.name}"`, () => remove.mutate(product.id)),
+                              },
+                            ]}
+                          />
                         )}
                       </Table.Td>
                     </Table.Tr>

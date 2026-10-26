@@ -52,6 +52,18 @@ If PowerShell blocks the scripts, run them with `powershell -ExecutionPolicy Byp
 
 Copy `.env.example` to `.env` to change ports, the database password, the refresh time, or the timezone. `TZ` decides which month "today" falls in. It defaults to `America/Phoenix`.
 
+### Using it from your phone (same Wi-Fi)
+
+The app has no login, so only do this on a home network you trust.
+
+1. Set `FRONTEND_BIND=0.0.0.0` in `.env` and run `docker compose up -d frontend`. Only the frontend opens up: it forwards `/api` to the backend itself, so the API and database stay local.
+2. Allow the port through Windows Firewall on private networks only. Run this in an **admin** PowerShell:
+   ```powershell
+   New-NetFirewallRule -DisplayName "MoneySage (LAN)" -Direction Inbound -Protocol TCP -LocalPort 5180 -Action Allow -Profile Private
+   ```
+   Your Wi-Fi must be set to **Private** (Settings → Network & internet → Wi-Fi → your network). On a Public network the rule doesn't apply, which is what you want away from home.
+3. Find the PC's IPv4 address with `ipconfig` (the Wi-Fi adapter) and open `http://<that address>:5180` on your phone. A DHCP reservation on your router keeps the address from changing.
+
 ## Development
 
 Source folders are mounted into the containers, so code changes hot-reload. The UI follows the design system in [`DESIGN.md`](DESIGN.md) (tokens live in `frontend/src/theme.ts` and `frontend/src/styles.css`). [`CLAUDE.md`](CLAUDE.md) has project notes and rules for Claude Code, including: never commit directly to `main`.

@@ -46,13 +46,14 @@ import { CATEGORY_COLORS } from '../components/CategoryColor';
 import {
   confirmDelete,
   EmptyState,
+  FilterControl,
   PageHeader,
+  RowActions,
   SectionCard,
   SortableTh,
   StatCard,
   useAppMutation,
   type SortDir,
-  FilterControl,
 } from '../components/common';
 import { ExpenseDonut } from '../components/ExpenseDonut';
 import { money, moneyCompact, percent, SERIES_ORDER, signedMoney } from '../format';
@@ -285,7 +286,16 @@ export default function CompanyPage() {
 
   return (
     <>
-      <Anchor component={Link} to="/companies" size="sm" c="dimmed" mb="xs" display="inline-flex" style={{ alignItems: 'center', gap: 4 }}>
+      <Anchor
+        component={Link}
+        to="/companies"
+        size="sm"
+        c="dimmed"
+        mb="xs"
+        display="inline-flex"
+        className="hit-44"
+        style={{ alignItems: 'center', gap: 4 }}
+      >
         <IconArrowLeft size={14} /> All companies
       </Anchor>
       <PageHeader
@@ -570,19 +580,13 @@ export default function CompanyPage() {
                         {money(e.amount)}
                       </Table.Td>
                       <Table.Td>
-                        <Group gap={4} wrap="nowrap" justify="flex-end">
-                          <ActionIcon variant="subtle" color="gray" aria-label="Edit" onClick={() => setEditingEntry({ entry: e, kind: e.kind })}>
-                            <IconPencil size={16} />
-                          </ActionIcon>
-                          <ActionIcon
-                            variant="subtle"
-                            color="red"
-                            aria-label="Delete"
-                            onClick={() => confirmDelete(`"${e.description}"`, () => removeEntry.mutate(e.id))}
-                          >
-                            <IconTrash size={16} />
-                          </ActionIcon>
-                        </Group>
+                        <RowActions
+                          label={`Actions for ${e.description}`}
+                          actions={[
+                            { label: 'Edit', icon: <IconPencil size={16} />, onClick: () => setEditingEntry({ entry: e, kind: e.kind }) },
+                            { label: 'Delete', icon: <IconTrash size={16} />, color: 'red', onClick: () => confirmDelete(`"${e.description}"`, () => removeEntry.mutate(e.id)) },
+                          ]}
+                        />
                       </Table.Td>
                     </Table.Tr>
                   ))}
@@ -875,14 +879,13 @@ function Owners({
                   {money(m.contributed_total - m.distributed_total)}
                 </Table.Td>
                 <Table.Td>
-                  <Group gap={4} wrap="nowrap" justify="flex-end">
-                    <ActionIcon variant="subtle" color="gray" aria-label={`Edit ${m.name}`} onClick={() => onEdit(m.member_id)}>
-                      <IconPencil size={16} />
-                    </ActionIcon>
-                    <ActionIcon variant="subtle" color="red" aria-label={`Remove ${m.name}`} onClick={() => onDelete(m)}>
-                      <IconTrash size={16} />
-                    </ActionIcon>
-                  </Group>
+                  <RowActions
+                    label={`Actions for ${m.name}`}
+                    actions={[
+                      { label: `Edit ${m.name}`, icon: <IconPencil size={16} />, onClick: () => onEdit(m.member_id) },
+                      { label: `Remove ${m.name}`, icon: <IconTrash size={16} />, color: 'red', onClick: () => onDelete(m) },
+                    ]}
+                  />
                 </Table.Td>
               </Table.Tr>
             ))}

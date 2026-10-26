@@ -171,16 +171,12 @@ export default function BalanceSheetPage() {
             </Text>
             {r.account.sync_from_holdings && (
               <Tooltip label="Value comes from this account's holdings on the Investments tab. Click to see them.">
-                <Badge
-                  component={Link}
-                  to={`/investments?account=${r.account.id}`}
-                  size="xs"
-                  variant="light"
-                  leftSection={<IconLink size={10} />}
-                  style={{ cursor: 'pointer' }}
-                >
-                  From Investments
-                </Badge>
+                {/* The link wraps the badge so its 44px tap area (hit-44) isn't clipped by the badge. */}
+                <Link to={`/investments?account=${r.account.id}`} className="hit-44" style={{ display: 'inline-flex' }}>
+                  <Badge size="xs" variant="light" leftSection={<IconLink size={10} />} style={{ cursor: 'pointer' }}>
+                    From Investments
+                  </Badge>
+                </Link>
               </Tooltip>
             )}
             {r.account.is_archived && (

@@ -370,14 +370,9 @@ body {
   .mantine-Table-th {
     white-space: normal;
   }
-  /* The empty header over a row's edit/delete icons sizes to the icons, which stack vertically. */
+  /* The empty header over a row's actions sizes to its one "⋯" button (see RowActions). */
   .mantine-Table-th:empty {
     width: auto !important;
-  }
-  .mantine-Table-td > .mantine-Group-root:has(> .mantine-ActionIcon-root ~ .mantine-ActionIcon-root) {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 2px;
   }
 }
 
@@ -389,5 +384,88 @@ body {
   .mantine-Table-td .num,
   .mantine-Table-td.num {
     overflow-wrap: normal;
+  }
+}
+
+/* ---------- Phones: touch targets ----------
+   Apple and Google ask for tap targets of at least 44px. Desktop keeps Mantine's compact sizes. */
+@media (max-width: 36em) {
+  .mantine-Button-root {
+    --button-height: 2.75rem !important;
+  }
+  .mantine-ActionIcon-root {
+    --ai-size: 2.75rem !important;
+  }
+  .mantine-Input-wrapper {
+    --input-height: 2.75rem !important;
+  }
+  .mantine-Pagination-root {
+    --pagination-control-size: 2.75rem !important;
+  }
+  .mantine-SegmentedControl-label {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mantine-Checkbox-root {
+    --checkbox-size: 1.5rem !important;
+  }
+  .mantine-Switch-root {
+    --switch-height: 1.75rem !important;
+    --switch-width: 3.25rem !important;
+    --switch-thumb-size: 1.375rem !important;
+  }
+  /* A switch's label toggles it, so the label row is the tap target. */
+  .mantine-Switch-label {
+    min-height: 2.75rem;
+    display: flex;
+    align-items: center;
+  }
+  .mantine-Burger-root {
+    width: 2.75rem !important;
+    height: 2.75rem !important;
+    padding: calc((2.75rem - var(--burger-size)) / 2) !important;
+    box-sizing: border-box;
+  }
+  .mantine-NavLink-root,
+  .mantine-Menu-item,
+  .mantine-Combobox-option {
+    min-height: 2.75rem;
+  }
+  /* Sortable headers: a taller invisible tap area, without making the header row taller. */
+  .sort-button {
+    position: relative;
+  }
+  .sort-button::after {
+    content: '';
+    position: absolute;
+    inset: -14px -4px;
+  }
+  /* Small links (a badge, an inline text link): a 44px invisible tap area around them. */
+  .hit-44 {
+    position: relative;
+  }
+  .hit-44::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+  .color-picker-button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    justify-content: center;
+    align-items: center;
+  }
+  /* Badge text was 9-10px at the small sizes; 11px is the smallest readable size. */
+  .mantine-Badge-root[data-size='xs'],
+  .mantine-Badge-root[data-size='sm'] {
+    --badge-fz: 0.6875rem !important;
+    --badge-height: 1.25rem !important;
   }
 }

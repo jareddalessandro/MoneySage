@@ -2,6 +2,7 @@ import {
   ActionIcon,
   Card,
   Group,
+  Menu,
   Paper,
   SegmentedControl,
   Select,
@@ -23,6 +24,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconChevronUp,
+  IconDots,
   IconSelector,
 } from '@tabler/icons-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -220,6 +222,69 @@ export function FilterControl({
     />
   ) : (
     <SegmentedControl size="xs" aria-label={label} value={value} onChange={onChange} data={data} />
+  );
+}
+
+export interface RowAction {
+  label: string;
+  icon: ReactNode;
+  onClick: () => void;
+  color?: string;
+  disabled?: boolean;
+  /** Desktop hover hint, when the icon alone isn't clear. */
+  tooltip?: string;
+}
+
+/**
+ * A row's actions (edit, delete, ...). Desktop shows small icon buttons; phones get one 44px "⋯" menu,
+ * since small icons side by side are easy to mis-tap (and tapping delete instead of edit is costly).
+ */
+export function RowActions({ label, actions }: { label: string; actions: RowAction[] }) {
+  const phone = useMediaQuery('(max-width: 36em)');
+  if (phone) {
+    return (
+      <Group justify="flex-end" wrap="nowrap">
+        <Menu position="bottom-end">
+          <Menu.Target>
+            <ActionIcon variant="subtle" color="gray" aria-label={label}>
+              <IconDots size={18} />
+            </ActionIcon>
+          </Menu.Target>
+          <Menu.Dropdown>
+            {actions.map((a) => (
+              <Menu.Item key={a.label} leftSection={a.icon} color={a.color} disabled={a.disabled} onClick={a.onClick}>
+                {a.label}
+              </Menu.Item>
+            ))}
+          </Menu.Dropdown>
+        </Menu>
+      </Group>
+    );
+  }
+  return (
+    <Group gap={4} wrap="nowrap" justify="flex-end">
+      {actions.map((a) => {
+        const button = (
+          <ActionIcon
+            key={a.label}
+            variant="subtle"
+            color={a.color ?? 'gray'}
+            aria-label={a.label}
+            disabled={a.disabled}
+            onClick={a.onClick}
+          >
+            {a.icon}
+          </ActionIcon>
+        );
+        return a.tooltip ? (
+          <Tooltip key={a.label} label={a.tooltip}>
+            {button}
+          </Tooltip>
+        ) : (
+          button
+        );
+      })}
+    </Group>
   );
 }
 

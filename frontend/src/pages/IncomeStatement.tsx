@@ -1,6 +1,5 @@
 import { BarChart } from '@mantine/charts';
 import {
-  ActionIcon,
   Anchor,
   Badge,
   Button,
@@ -51,6 +50,7 @@ import {
   EmptyState,
   MonthSwitcher,
   PageHeader,
+  RowActions,
   SectionCard,
   SortableTh,
   StatCard,
@@ -116,7 +116,11 @@ export default function IncomeStatementPage() {
   const [byCategory, setByCategory] = useState(loadByCategory);
 
   const { data: txns = [] } = useQuery({ queryKey: ['transactions', month], queryFn: () => api.transactions(month) });
-  const { data: statement } = useQuery({ queryKey: ['income-statement', month], queryFn: () => api.incomeStatement(month) });
+  // While a month loads, `statement` still holds the previous month's (placeholderData); isPlaceholderData says so.
+  const { data: statement, isPlaceholderData: statementLoading } = useQuery({
+    queryKey: ['income-statement', month],
+    queryFn: () => api.incomeStatement(month),
+  });
   const { data: trend = [] } = useQuery({ queryKey: ['income-trend'], queryFn: () => api.incomeTrend(12) });
   const { data: imports = [] } = useQuery({ queryKey: ['statement-imports', month], queryFn: () => api.statementImports(month) });
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts', 'all'], queryFn: () => api.accounts(true) });
@@ -178,19 +182,13 @@ export default function IncomeStatementPage() {
   );
 
   const rowActions = (t: Transaction) => (
-    <Group gap={4} wrap="nowrap" justify="flex-end">
-      <ActionIcon variant="subtle" color="gray" aria-label="Edit" onClick={() => setEditing({ txn: t })}>
-        <IconPencil size={16} />
-      </ActionIcon>
-      <ActionIcon
-        variant="subtle"
-        color="red"
-        aria-label="Delete"
-        onClick={() => confirmDelete(`"${t.description}"`, () => remove.mutate(t.id))}
-      >
-        <IconTrash size={16} />
-      </ActionIcon>
-    </Group>
+    <RowActions
+      label={`Actions for ${t.description}`}
+      actions={[
+        { label: 'Edit', icon: <IconPencil size={16} />, onClick: () => setEditing({ txn: t }) },
+        { label: 'Delete', icon: <IconTrash size={16} />, color: 'red', onClick: () => confirmDelete(`"${t.description}"`, () => remove.mutate(t.id)) },
+      ]}
+    />
   );
 
   const source = (t: Transaction) =>
@@ -262,7 +260,12 @@ export default function IncomeStatementPage() {
           </SimpleGrid>
         </Grid.Col>
         <Grid.Col span={{ base: 12, lg: 4 }}>
-          {statement && <MonthNotes key={month} month={month} saved={statement.notes} />}
+          {/* The editor takes its text when it mounts, so wait for this month's notes, not the last month's. */}
+          {statement && !statementLoading ? (
+            <MonthNotes key={month} month={month} saved={statement.notes} />
+          ) : (
+            <MonthNotesCard month={month} />
+          )}
         </Grid.Col>
       </Grid>
 
@@ -532,6 +535,7 @@ function StatementHeader({
             type="button"
             size="sm"
             c="red.4"
+            className="hit-44"
             onClick={() =>
               confirmDelete(
                 `the ${i.bank} statement import`,
@@ -685,7 +689,7 @@ function CardBudgetTip({ statement: s, cardCategoryId }: { statement: IncomeStat
     <Text size="xs" c="dimmed" mb="sm">
       Card payments have no budget yet, so they show as unbudgeted while categories like Groceries look underspent.
       Mark the budget items you pay by card on the{' '}
-      <Anchor component={Link} to="/budget" size="xs">
+      <Anchor component={Link} to="/budget" size="xs" className="hit-44">
         Budget page
       </Anchor>{' '}
       (&ldquo;Paid by credit card&rdquo;) to compare them with card payments as one line.
@@ -906,12 +910,14 @@ function MonthNotes({ month, saved }: { month: string; saved: string | null }) {
   const latest = useRef(text);
   latest.current = text;
 
+  const cache = (notes: string) =>
+    queryClient.setQueryData<IncomeStatement>(['income-statement', month], (old) =>
+      old ? { ...old, notes: notes.trim() || null } : old,
+    );
   const save = useMutation({
     mutationFn: (notes: string) => api.setMonthNotes(month, notes),
     onSuccess: (_, notes) => {
-      queryClient.setQueryData<IncomeStatement>(['income-statement', month], (old) =>
-        old ? { ...old, notes: notes.trim() || null } : old,
-      );
+      cache(notes);
       setStatus('saved');
     },
     onError: (error: Error) => {
@@ -933,14 +939,46 @@ function MonthNotes({ month, saved }: { month: string; saved: string | null }) {
     return () => clearTimeout(timer);
   }, [text]);
 
-  // Switching months unmounts this; save anything typed in the last moment.
+  // Switching months unmounts this; save anything typed in the last moment. The cache is updated too,
+  // or coming back to this month (before it's refetched) would show the notes from before that edit.
   useEffect(
     () => () => {
-      if (latest.current !== lastSaved.current) api.setMonthNotes(month, latest.current).catch(() => {});
+      if (latest.current === lastSaved.current) return;
+      cache(latest.current);
+      api.setMonthNotes(month, latest.current).catch((error: Error) => {
+        queryClient.invalidateQueries({ queryKey: ['income-statement', month] });
+        notifications.show({ title: "Couldn't save notes", message: error.message, color: 'red' });
+      });
     },
     [month],
   );
 
+  return (
+    <MonthNotesCard
+      month={month}
+      status={status}
+      value={text}
+      onChange={(value) => setText(value)}
+      onBlur={flush}
+    />
+  );
+}
+
+/** The notes card itself; without `value` it's the read-only stand-in shown while the month loads. */
+function MonthNotesCard({
+  month,
+  status = 'idle',
+  value,
+  onChange,
+  onBlur,
+}: {
+  month: string;
+  status?: 'idle' | 'saving' | 'saved';
+  value?: string;
+  onChange?: (value: string) => void;
+  onBlur?: () => void;
+}) {
+  const loading = value === undefined;
   // Sized like the summary cards beside it: a label row, then a box that grows as notes get longer.
   return (
     <Paper p={{ base: '0.75rem', sm: '0.9rem' }} h="100%">
@@ -954,13 +992,14 @@ function MonthNotes({ month, saved }: { month: string; saved: string | null }) {
         mt={6}
         size="sm"
         aria-label={`Notes for ${monthLabel(month)}`}
-        placeholder="Anything to remember about this month…"
+        placeholder={loading ? 'Loading…' : 'Anything to remember about this month…'}
         autosize
         minRows={3}
         maxRows={8}
-        value={text}
-        onChange={(e) => setText(e.currentTarget.value)}
-        onBlur={flush}
+        disabled={loading}
+        value={value ?? ''}
+        onChange={(e) => onChange?.(e.currentTarget.value)}
+        onBlur={onBlur}
       />
     </Paper>
   );
