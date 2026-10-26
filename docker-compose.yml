@@ -46,7 +46,9 @@ services:
       - ./frontend:/app
       - /app/node_modules
     ports:
-      - "127.0.0.1:${FRONTEND_PORT:-5180}:5173"
+      # FRONTEND_BIND=0.0.0.0 in .env opens the app to phones on your Wi-Fi (Vite proxies /api, so the
+      # backend and database stay local). There's no login, so only do that on a trusted network.
+      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-5180}:5173"
     depends_on:
       - backend
 

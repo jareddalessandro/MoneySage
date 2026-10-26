@@ -116,7 +116,11 @@ export default function IncomeStatementPage() {
   const [byCategory, setByCategory] = useState(loadByCategory);
 
   const { data: txns = [] } = useQuery({ queryKey: ['transactions', month], queryFn: () => api.transactions(month) });
-  const { data: statement } = useQuery({ queryKey: ['income-statement', month], queryFn: () => api.incomeStatement(month) });
+  // While a month loads, `statement` still holds the previous month's (placeholderData); isPlaceholderData says so.
+  const { data: statement, isPlaceholderData: statementLoading } = useQuery({
+    queryKey: ['income-statement', month],
+    queryFn: () => api.incomeStatement(month),
+  });
   const { data: trend = [] } = useQuery({ queryKey: ['income-trend'], queryFn: () => api.incomeTrend(12) });
   const { data: imports = [] } = useQuery({ queryKey: ['statement-imports', month], queryFn: () => api.statementImports(month) });
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts', 'all'], queryFn: () => api.accounts(true) });
@@ -256,7 +260,12 @@ export default function IncomeStatementPage() {
           </SimpleGrid>
         </Grid.Col>
         <Grid.Col span={{ base: 12, lg: 4 }}>
-          {statement && <MonthNotes key={month} month={month} saved={statement.notes} />}
+          {/* The editor takes its text when it mounts, so wait for this month's notes, not the last month's. */}
+          {statement && !statementLoading ? (
+            <MonthNotes key={month} month={month} saved={statement.notes} />
+          ) : (
+            <MonthNotesCard month={month} />
+          )}
         </Grid.Col>
       </Grid>
 
@@ -901,12 +910,14 @@ function MonthNotes({ month, saved }: { month: string; saved: string | null }) {
   const latest = useRef(text);
   latest.current = text;
 
+  const cache = (notes: string) =>
+    queryClient.setQueryData<IncomeStatement>(['income-statement', month], (old) =>
+      old ? { ...old, notes: notes.trim() || null } : old,
+    );
   const save = useMutation({
     mutationFn: (notes: string) => api.setMonthNotes(month, notes),
     onSuccess: (_, notes) => {
-      queryClient.setQueryData<IncomeStatement>(['income-statement', month], (old) =>
-        old ? { ...old, notes: notes.trim() || null } : old,
-      );
+      cache(notes);
       setStatus('saved');
     },
     onError: (error: Error) => {
@@ -928,14 +939,46 @@ function MonthNotes({ month, saved }: { month: string; saved: string | null }) {
     return () => clearTimeout(timer);
   }, [text]);
 
-  // Switching months unmounts this; save anything typed in the last moment.
+  // Switching months unmounts this; save anything typed in the last moment. The cache is updated too,
+  // or coming back to this month (before it's refetched) would show the notes from before that edit.
   useEffect(
     () => () => {
-      if (latest.current !== lastSaved.current) api.setMonthNotes(month, latest.current).catch(() => {});
+      if (latest.current === lastSaved.current) return;
+      cache(latest.current);
+      api.setMonthNotes(month, latest.current).catch((error: Error) => {
+        queryClient.invalidateQueries({ queryKey: ['income-statement', month] });
+        notifications.show({ title: "Couldn't save notes", message: error.message, color: 'red' });
+      });
     },
     [month],
   );
 
+  return (
+    <MonthNotesCard
+      month={month}
+      status={status}
+      value={text}
+      onChange={(value) => setText(value)}
+      onBlur={flush}
+    />
+  );
+}
+
+/** The notes card itself; without `value` it's the read-only stand-in shown while the month loads. */
+function MonthNotesCard({
+  month,
+  status = 'idle',
+  value,
+  onChange,
+  onBlur,
+}: {
+  month: string;
+  status?: 'idle' | 'saving' | 'saved';
+  value?: string;
+  onChange?: (value: string) => void;
+  onBlur?: () => void;
+}) {
+  const loading = value === undefined;
   // Sized like the summary cards beside it: a label row, then a box that grows as notes get longer.
   return (
     <Paper p={{ base: '0.75rem', sm: '0.9rem' }} h="100%">
@@ -949,13 +992,14 @@ function MonthNotes({ month, saved }: { month: string; saved: string | null }) {
         mt={6}
         size="sm"
         aria-label={`Notes for ${monthLabel(month)}`}
-        placeholder="Anything to remember about this month…"
+        placeholder={loading ? 'Loading…' : 'Anything to remember about this month…'}
         autosize
         minRows={3}
         maxRows={8}
-        value={text}
-        onChange={(e) => setText(e.currentTarget.value)}
-        onBlur={flush}
+        disabled={loading}
+        value={value ?? ''}
+        onChange={(e) => onChange?.(e.currentTarget.value)}
+        onBlur={onBlur}
       />
     </Paper>
   );
