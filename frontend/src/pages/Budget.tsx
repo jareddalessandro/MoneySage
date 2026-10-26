@@ -32,6 +32,7 @@ import {
   confirmDelete,
   EmptyState,
   PageHeader,
+  RowActions,
   SectionCard,
   SortableTh,
   StatCard,
@@ -212,19 +213,13 @@ export default function BudgetPage() {
                   {money(item.monthly_amount)}
                 </Table.Td>
                 <Table.Td>
-                  <Group gap={4} wrap="nowrap" justify="flex-end">
-                    <ActionIcon variant="subtle" color="gray" aria-label="Edit" onClick={() => setEditing({ kind, item })}>
-                      <IconPencil size={16} />
-                    </ActionIcon>
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      aria-label="Delete"
-                      onClick={() => confirmDelete(`"${item.name}"`, () => remove.mutate(item.id))}
-                    >
-                      <IconTrash size={16} />
-                    </ActionIcon>
-                  </Group>
+                  <RowActions
+                    label={`Actions for ${item.name}`}
+                    actions={[
+                      { label: 'Edit', icon: <IconPencil size={16} />, onClick: () => setEditing({ kind, item }) },
+                      { label: 'Delete', icon: <IconTrash size={16} />, color: 'red', onClick: () => confirmDelete(`"${item.name}"`, () => remove.mutate(item.id)) },
+                    ]}
+                  />
                 </Table.Td>
               </Table.Tr>
             ))}

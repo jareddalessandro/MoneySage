@@ -1,4 +1,5 @@
 import { Badge, Box, ColorSwatch, Group, Popover, SimpleGrid, Text, Tooltip, UnstyledButton } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
 import { IconCheck } from '@tabler/icons-react';
 import { type ReactNode, useState } from 'react';
 
@@ -38,6 +39,7 @@ export function CategoryBadge({ category }: { category: { name: string; color: C
 
 export function CategoryColorPicker({ value, onChange }: { value: CategoryColor; onChange: (color: CategoryColor) => void }) {
   const [opened, setOpened] = useState(false);
+  const phone = useMediaQuery('(max-width: 36em)'); // 44px-ish swatches to tap on phones
   const current = CATEGORY_COLORS.find((c) => c.key === value);
   return (
     <Popover opened={opened} onChange={setOpened} position="bottom-start" withArrow>
@@ -48,7 +50,7 @@ export function CategoryColorPicker({ value, onChange }: { value: CategoryColor;
             aria-label={`Color: ${current?.label ?? value}. Change color`}
             p={4}
             style={{ borderRadius: 'var(--mantine-radius-sm)', display: 'flex' }}
-            className="list-row"
+            className="list-row color-picker-button"
           >
             <CategoryDot color={value} size={12} />
           </UnstyledButton>
@@ -58,14 +60,14 @@ export function CategoryColorPicker({ value, onChange }: { value: CategoryColor;
         <Text className="label-sm" mb={6}>
           Color
         </Text>
-        <SimpleGrid cols={5} spacing={6}>
+        <SimpleGrid cols={5} spacing={phone ? 8 : 6}>
           {CATEGORY_COLORS.map((c) => (
             <Tooltip key={c.key} label={c.label}>
               <ColorSwatch
                 component="button"
                 type="button"
                 color={categoryColor(c.key)}
-                size={22}
+                size={phone ? 40 : 22}
                 aria-label={c.label}
                 aria-pressed={c.key === value}
                 onClick={() => {

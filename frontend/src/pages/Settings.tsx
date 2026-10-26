@@ -1,11 +1,11 @@
-import { ActionIcon, Badge, Button, Group, SimpleGrid, Stack, Switch, Text, TextInput, Tooltip } from '@mantine/core';
+import { ActionIcon, Badge, Button, Group, SimpleGrid, Stack, Switch, Text, TextInput } from '@mantine/core';
 import { IconArchive, IconArchiveOff, IconCheck, IconPencil, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { api } from '../api';
 import { CategoryColorPicker } from '../components/CategoryColor';
-import { confirmDelete, PageHeader, SectionCard, useAppMutation } from '../components/common';
+import { confirmDelete, PageHeader, RowActions, SectionCard, useAppMutation } from '../components/common';
 import type { Category, CategoryColor, CategoryKind } from '../types';
 
 export default function SettingsPage() {
@@ -125,41 +125,33 @@ function CategoryRow({ category }: { category: Category }) {
             </ActionIcon>
           </>
         ) : (
-          <>
-            <Tooltip label="Rename">
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                aria-label="Rename"
-                onClick={() => {
+          <RowActions
+            label={`Actions for ${category.name}`}
+            actions={[
+              {
+                label: 'Rename',
+                tooltip: 'Rename',
+                icon: <IconPencil size={16} />,
+                onClick: () => {
                   setName(category.name);
                   setEditing(true);
-                }}
-              >
-                <IconPencil size={16} />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label={category.is_archived ? 'Unarchive' : 'Archive'}>
-              <ActionIcon
-                variant="subtle"
-                color="gray"
-                aria-label={category.is_archived ? 'Unarchive' : 'Archive'}
-                onClick={() => update.mutate({ is_archived: !category.is_archived })}
-              >
-                {category.is_archived ? <IconArchiveOff size={16} /> : <IconArchive size={16} />}
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Delete (only if unused)">
-              <ActionIcon
-                variant="subtle"
-                color="red"
-                aria-label="Delete"
-                onClick={() => confirmDelete(`"${category.name}"`, () => remove.mutate(undefined))}
-              >
-                <IconTrash size={16} />
-              </ActionIcon>
-            </Tooltip>
-          </>
+                },
+              },
+              {
+                label: category.is_archived ? 'Unarchive' : 'Archive',
+                tooltip: category.is_archived ? 'Unarchive' : 'Archive',
+                icon: category.is_archived ? <IconArchiveOff size={16} /> : <IconArchive size={16} />,
+                onClick: () => update.mutate({ is_archived: !category.is_archived }),
+              },
+              {
+                label: 'Delete',
+                tooltip: 'Delete (only if unused)',
+                icon: <IconTrash size={16} />,
+                color: 'red',
+                onClick: () => confirmDelete(`"${category.name}"`, () => remove.mutate(undefined)),
+              },
+            ]}
+          />
         )}
       </Group>
     </Group>

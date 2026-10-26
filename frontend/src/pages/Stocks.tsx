@@ -41,6 +41,7 @@ import {
   Delta,
   EmptyState,
   PageHeader,
+  RowActions,
   SectionCard,
   SortableTh,
   StatCard,
@@ -626,14 +627,13 @@ function HoldingsBody({
 
   const actions = (h: Holding) => (
     <Table.Td>
-      <Group gap={4} wrap="nowrap" justify="flex-end">
-        <ActionIcon variant="subtle" color="gray" aria-label="Edit" onClick={() => onEdit(h)}>
-          <IconPencil size={16} />
-        </ActionIcon>
-        <ActionIcon variant="subtle" color="red" aria-label="Delete" onClick={() => onDelete(h)}>
-          <IconTrash size={16} />
-        </ActionIcon>
-      </Group>
+      <RowActions
+        label={`Actions for ${h.asset_type === 'cash' ? 'cash' : h.ticker}`}
+        actions={[
+          { label: 'Edit', icon: <IconPencil size={16} />, onClick: () => onEdit(h) },
+          { label: 'Delete', icon: <IconTrash size={16} />, color: 'red', onClick: () => onDelete(h) },
+        ]}
+      />
     </Table.Td>
   );
   const notes = (h: Holding) =>

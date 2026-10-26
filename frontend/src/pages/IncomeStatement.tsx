@@ -1,6 +1,5 @@
 import { BarChart } from '@mantine/charts';
 import {
-  ActionIcon,
   Anchor,
   Badge,
   Button,
@@ -51,6 +50,7 @@ import {
   EmptyState,
   MonthSwitcher,
   PageHeader,
+  RowActions,
   SectionCard,
   SortableTh,
   StatCard,
@@ -178,19 +178,13 @@ export default function IncomeStatementPage() {
   );
 
   const rowActions = (t: Transaction) => (
-    <Group gap={4} wrap="nowrap" justify="flex-end">
-      <ActionIcon variant="subtle" color="gray" aria-label="Edit" onClick={() => setEditing({ txn: t })}>
-        <IconPencil size={16} />
-      </ActionIcon>
-      <ActionIcon
-        variant="subtle"
-        color="red"
-        aria-label="Delete"
-        onClick={() => confirmDelete(`"${t.description}"`, () => remove.mutate(t.id))}
-      >
-        <IconTrash size={16} />
-      </ActionIcon>
-    </Group>
+    <RowActions
+      label={`Actions for ${t.description}`}
+      actions={[
+        { label: 'Edit', icon: <IconPencil size={16} />, onClick: () => setEditing({ txn: t }) },
+        { label: 'Delete', icon: <IconTrash size={16} />, color: 'red', onClick: () => confirmDelete(`"${t.description}"`, () => remove.mutate(t.id)) },
+      ]}
+    />
   );
 
   const source = (t: Transaction) =>
@@ -532,6 +526,7 @@ function StatementHeader({
             type="button"
             size="sm"
             c="red.4"
+            className="hit-44"
             onClick={() =>
               confirmDelete(
                 `the ${i.bank} statement import`,
@@ -685,7 +680,7 @@ function CardBudgetTip({ statement: s, cardCategoryId }: { statement: IncomeStat
     <Text size="xs" c="dimmed" mb="sm">
       Card payments have no budget yet, so they show as unbudgeted while categories like Groceries look underspent.
       Mark the budget items you pay by card on the{' '}
-      <Anchor component={Link} to="/budget" size="xs">
+      <Anchor component={Link} to="/budget" size="xs" className="hit-44">
         Budget page
       </Anchor>{' '}
       (&ldquo;Paid by credit card&rdquo;) to compare them with card payments as one line.
