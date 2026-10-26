@@ -79,20 +79,27 @@ function OwnerShares({ companies, year }: { companies: CompanyListItem[]; year: 
   if (owners.size === 0) return null;
   return (
     <SectionCard title={`Share of profit by owner · ${year}`}>
-      <Table.ScrollContainer minWidth={480}>
+      <Table.ScrollContainer minWidth={480} className="phone-fit">
         <Table verticalSpacing={6} highlightOnHover>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Owner</Table.Th>
-              <Table.Th>Stakes</Table.Th>
+              <Table.Th className="hide-xs">Stakes</Table.Th>
               <Table.Th ta="right">Share of profit</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {[...owners].map(([name, o]) => (
               <Table.Tr key={name}>
-                <Table.Td fw={500}>{name}</Table.Td>
                 <Table.Td>
+                  <Text size="sm" fw={500}>
+                    {name}
+                  </Text>
+                  <Text size="xs" c="dimmed" className="show-xs">
+                    {o.stakes.join(' · ')}
+                  </Text>
+                </Table.Td>
+                <Table.Td className="hide-xs">
                   <Text size="sm" c="dimmed">
                     {o.stakes.join(' · ')}
                   </Text>
@@ -123,7 +130,7 @@ function CompanyTile({ company: c }: { company: CompanyListItem }) {
     </div>
   );
   return (
-    <Paper component={Link} to={`/companies/${c.id}`} p="1.1rem" h="100%" className="tile-link">
+    <Paper component={Link} to={`/companies/${c.id}`} p={{ base: '0.85rem', sm: '1.1rem' }} h="100%" className="tile-link">
       <Stack gap="md">
         <div>
           <Text className="headline" fw={700} size="lg" lh={1.25}>

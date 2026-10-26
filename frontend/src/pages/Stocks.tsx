@@ -116,7 +116,7 @@ export default function StocksPage() {
   const { data: summary } = useQuery({ queryKey: ['portfolio-summary'], queryFn: api.portfolioSummary });
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts() });
   // ?account=<id> (or 'unassigned') narrows the holdings table to one account. Set by the selector above
-  // the table and by the "From Stocks" link on the Balance Sheet. Without it, all accounts show combined.
+  // the table and by the "From Investments" link on the Balance Sheet. Without it, all accounts show combined.
   const [params, setParams] = useSearchParams();
   const accountParam = params.get('account');
   const accountFilter = accountParam == null ? null : accountParam === UNASSIGNED ? UNASSIGNED : Number(accountParam);
@@ -161,8 +161,15 @@ export default function StocksPage() {
     setSort({ key, dir });
     saveSort({ key, dir });
   };
-  const header = (key: SortKey, label: string, align?: 'right') => (
-    <SortableTh label={label} align={align} active={sort.key === key} dir={sort.dir} onSort={() => sortBy(key)} />
+  const header = (key: SortKey, label: string, align?: 'right', className?: string) => (
+    <SortableTh
+      label={label}
+      align={align}
+      className={className}
+      active={sort.key === key}
+      dir={sort.dir}
+      onSort={() => sortBy(key)}
+    />
   );
   // Allocation is against everything listed, so the rows add up to 100%.
   const holdingsTotal = shown.reduce((s, h) => s + (h.market_value ?? 0), 0);
@@ -183,7 +190,7 @@ export default function StocksPage() {
   return (
     <>
       <PageHeader
-        title="Stocks"
+        title="Investments"
         description="Stocks, ETFs, crypto, and cash held in your accounts. Prices refresh automatically every evening."
         actions={
           <>
@@ -269,7 +276,7 @@ export default function StocksPage() {
             holdings.length > 0 && (
               <Select
                 size="xs"
-                w={200}
+                w={{ base: '100%', xs: 200 }}
                 aria-label="Show holdings for"
                 data={accountOptions}
                 value={accountParam ?? ''}
@@ -292,19 +299,27 @@ export default function StocksPage() {
               }
             />
           ) : (
-            <Table.ScrollContainer minWidth={900}>
+            <Table.ScrollContainer minWidth={900} className="phone-fit">
               <Table highlightOnHover verticalSpacing="xs">
                 <Table.Thead>
                   <Table.Tr>
                     {header('ticker', 'Ticker')}
-                    <Table.Th>Account</Table.Th>
-                    <Table.Th ta="right">Quantity</Table.Th>
-                    <Table.Th ta="right">Avg cost</Table.Th>
-                    <Table.Th ta="right">Price</Table.Th>
+                    <Table.Th className="hide-xs">Account</Table.Th>
+                    <Table.Th ta="right" className="hide-xs">
+                      Quantity
+                    </Table.Th>
+                    <Table.Th ta="right" className="hide-xs">
+                      Avg cost
+                    </Table.Th>
+                    <Table.Th ta="right" className="hide-xs">
+                      Price
+                    </Table.Th>
                     {header('value', 'Value', 'right')}
-                    {header('allocation', 'Allocation', 'right')}
-                    <Table.Th ta="right">Today</Table.Th>
-                    {header('gain', 'Gain / loss', 'right')}
+                    {header('allocation', 'Allocation', 'right', 'hide-xs')}
+                    <Table.Th ta="right" className="hide-xs">
+                      Today
+                    </Table.Th>
+                    {header('gain', 'Gain / loss', 'right', 'hide-xs')}
                     <Table.Th w={70} />
                   </Table.Tr>
                 </Table.Thead>
@@ -324,23 +339,24 @@ export default function StocksPage() {
                 />
                 <Table.Tfoot>
                   <Table.Tr>
-                    <Table.Th colSpan={3}>Total</Table.Th>
-                    <Table.Th ta="right" className="num">
+                    <Table.Th>Total</Table.Th>
+                    <Table.Th colSpan={2} className="hide-xs" />
+                    <Table.Th ta="right" className="num hide-xs">
                       {money(totals.cost)}
                     </Table.Th>
-                    <Table.Th />
+                    <Table.Th className="hide-xs" />
                     <Table.Th ta="right" className="num">
                       {money(totals.value)}
                     </Table.Th>
-                    <Table.Th ta="right" className="num">
+                    <Table.Th ta="right" className="num hide-xs">
                       {holdingsTotal > 0 ? '100%' : '—'}
                     </Table.Th>
-                    <Table.Th ta="right">
+                    <Table.Th ta="right" className="hide-xs">
                       <Group justify="flex-end">
                         <Delta value={totals.day} />
                       </Group>
                     </Table.Th>
-                    <Table.Th ta="right">
+                    <Table.Th ta="right" className="hide-xs">
                       <Group justify="flex-end">
                         <Delta value={totals.gain} />
                       </Group>
@@ -518,10 +534,10 @@ function FigureCells({ f, total, costNote }: { f: Figures; total: number; costNo
   const share = f.market_value != null && total > 0 ? f.market_value / total : null;
   return (
     <>
-      <Table.Td ta="right" className="num">
+      <Table.Td ta="right" className="num hide-xs">
         {cash ? '—' : quantity(f.quantity)}
       </Table.Td>
-      <Table.Td ta="right" className="num">
+      <Table.Td ta="right" className="num hide-xs">
         {money(f.cost_per_unit)}
         {f.cost_basis != null && costNote && (
           <Text size="xs" c="dimmed">
@@ -529,7 +545,7 @@ function FigureCells({ f, total, costNote }: { f: Figures; total: number; costNo
           </Text>
         )}
       </Table.Td>
-      <Table.Td ta="right" className="num">
+      <Table.Td ta="right" className="num hide-xs">
         {money(f.price)}
         {f.price_date && (
           <Text size="xs" c="dimmed">
@@ -539,8 +555,17 @@ function FigureCells({ f, total, costNote }: { f: Figures; total: number; costNo
       </Table.Td>
       <Table.Td ta="right" className="num" fw={500}>
         {money(f.market_value)}
+        {/* Phones hide the allocation and gain columns; both sit under the value instead. */}
+        <Stack gap={0} align="flex-end" className="show-xs">
+          {f.gain != null && <Delta value={f.gain} size="xs" />}
+          {share != null && (
+            <Text size="xs" c="dimmed" fw={400}>
+              {percent(share)}
+            </Text>
+          )}
+        </Stack>
       </Table.Td>
-      <Table.Td ta="right" className="num">
+      <Table.Td ta="right" className="num hide-xs">
         {share == null ? (
           '—'
         ) : (
@@ -550,10 +575,10 @@ function FigureCells({ f, total, costNote }: { f: Figures; total: number; costNo
           </>
         )}
       </Table.Td>
-      <Table.Td ta="right">
+      <Table.Td ta="right" className="hide-xs">
         <Group justify="flex-end">{cash ? <Text size="sm">—</Text> : <Delta value={f.day_change} />}</Group>
       </Table.Td>
-      <Table.Td ta="right">
+      <Table.Td ta="right" className="hide-xs">
         <Group justify="flex-end">{f.gain == null ? <Text size="sm">—</Text> : <Delta value={f.gain} />}</Group>
       </Table.Td>
     </>
@@ -569,7 +594,7 @@ function TickerLabel({ ticker, asset_type }: { ticker: string; asset_type: Asset
         {cash ? 'Cash' : ticker}
       </Text>
       {!cash && (
-        <Badge size="xs" variant="light" color="gray">
+        <Badge size="xs" variant="light" color="gray" className="hide-xs">
           {ASSET_LABELS[asset_type]}
         </Badge>
       )}
@@ -622,6 +647,18 @@ function HoldingsBody({
       {h.account_name ?? 'Unassigned'}
     </Text>
   );
+  // Phones hide the account and quantity columns; this line under the ticker stands in for them.
+  const phoneLine = (text: string) => (
+    <Text size="xs" c="dimmed" className="show-xs num">
+      {text}
+    </Text>
+  );
+  const holdingLine = (h: Holding) =>
+    phoneLine(
+      [h.asset_type === 'cash' ? null : `${quantity(h.quantity)} @ ${money(h.price)}`, h.account_name ?? 'Unassigned']
+        .filter(Boolean)
+        .join(' · '),
+    );
 
   return (
     <Table.Tbody>
@@ -632,9 +669,10 @@ function HoldingsBody({
             <Table.Tr key={p.key}>
               <Table.Td>
                 <TickerLabel ticker={h.ticker} asset_type={h.asset_type} />
+                {holdingLine(h)}
                 {notes(h)}
               </Table.Td>
-              <Table.Td>{account(h)}</Table.Td>
+              <Table.Td className="hide-xs">{account(h)}</Table.Td>
               <FigureCells f={h} total={total} />
               {actions(h)}
             </Table.Tr>,
@@ -662,8 +700,9 @@ function HoldingsBody({
                 </ActionIcon>
                 <TickerLabel ticker={p.ticker} asset_type={p.asset_type} />
               </Group>
+              {phoneLine(`${p.lots.length} accounts`)}
             </Table.Td>
-            <Table.Td>
+            <Table.Td className="hide-xs">
               <Text size="sm">Multiple</Text>
               <Text size="xs" c="dimmed">
                 {p.lots.length} accounts
@@ -679,8 +718,11 @@ function HoldingsBody({
           ...(open
             ? p.lots.map((h) => (
                 <Table.Tr key={h.id} className="lot-row">
-                  <Table.Td pl={42}>{notes(h) || <Text size="xs" c="dimmed">{label === 'cash' ? 'Cash' : h.ticker}</Text>}</Table.Td>
-                  <Table.Td>{account(h)}</Table.Td>
+                  <Table.Td pl={{ base: 'md', xs: 42 }}>
+                    {notes(h) || <Text size="xs" c="dimmed">{label === 'cash' ? 'Cash' : h.ticker}</Text>}
+                    {holdingLine(h)}
+                  </Table.Td>
+                  <Table.Td className="hide-xs">{account(h)}</Table.Td>
                   <FigureCells f={h} total={total} />
                   {actions(h)}
                 </Table.Tr>
@@ -795,7 +837,7 @@ function HoldingForm({ holding, onDone }: { holding: Holding | null; onDone: () 
             selected
               ? selected.sync_from_holdings
                 ? 'This holding will count toward that account on the Balance Sheet.'
-                : 'Tip: turn on "Get balance from Stocks tab" for this account to sync its value.'
+                : 'Tip: turn on "Get balance from Investments tab" for this account to sync its value.'
               : isCash
                 ? 'The account holding this cash (e.g. your brokerage or IRA).'
                 : 'Link to a Balance Sheet account (e.g. your brokerage or 401k).'

@@ -44,14 +44,20 @@ export function Products({
         />
       ) : (
         <>
-          <Table.ScrollContainer minWidth={560}>
+          <Table.ScrollContainer minWidth={560} className="phone-fit">
             <Table verticalSpacing={6} highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Product</Table.Th>
-                  <Table.Th ta="right">Income</Table.Th>
-                  <Table.Th ta="right">Cost of revenue</Table.Th>
-                  <Table.Th ta="right">Other expenses</Table.Th>
+                  <Table.Th ta="right" className="hide-xs">
+                    Income
+                  </Table.Th>
+                  <Table.Th ta="right" className="hide-xs">
+                    Cost of revenue
+                  </Table.Th>
+                  <Table.Th ta="right" className="hide-xs">
+                    Other expenses
+                  </Table.Th>
                   <Table.Th ta="right">Net</Table.Th>
                   <Table.Th w={70} />
                 </Table.Tr>
@@ -70,14 +76,18 @@ export function Products({
                             {product.description}
                           </Text>
                         )}
+                        <Text size="xs" c="dimmed" className="show-xs num">
+                          Income {money(r.income)} · cost of revenue {money(r.cost_of_revenue)} · other{' '}
+                          {money(r.other_expenses)}
+                        </Text>
                       </Table.Td>
-                      <Table.Td ta="right" className="num">
+                      <Table.Td ta="right" className="num hide-xs">
                         {money(r.income)}
                       </Table.Td>
-                      <Table.Td ta="right" className="num">
+                      <Table.Td ta="right" className="num hide-xs">
                         {money(r.cost_of_revenue)}
                       </Table.Td>
-                      <Table.Td ta="right" className="num">
+                      <Table.Td ta="right" className="num hide-xs">
                         {money(r.other_expenses)}
                       </Table.Td>
                       <Table.Td ta="right" className="num">

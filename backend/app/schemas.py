@@ -46,6 +46,7 @@ class CategoryOut(ORMModel):
     kind: CategoryKind
     color: CategoryColor
     is_archived: bool
+    is_card_payments: bool
 
 
 # ---------- Budget ----------
@@ -70,6 +71,7 @@ class BudgetItemIn(BaseModel):
     amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
     frequency: Frequency
     notes: str | None = None
+    paid_by_card: bool = False  # expenses only
     # Paycheck breakdown (income only): pay before deductions, and the deductions themselves.
     gross_amount: Decimal | None = Field(default=None, gt=0, max_digits=14, decimal_places=2)
     deductions: list[DeductionIn] = []
@@ -83,6 +85,7 @@ class BudgetItemOut(ORMModel):
     frequency: Frequency
     monthly_amount: Num
     notes: str | None
+    paid_by_card: bool
     gross_amount: Num | None
     monthly_gross_amount: Num | None
     deductions: list[DeductionOut]
@@ -221,6 +224,10 @@ class TransactionOut(ORMModel):
     notes: str | None
     account_id: int | None
     source: str
+    statement_import_id: int | None
+
+
+TotalsFrom = Literal["statement", "manual"]
 
 
 class StatementCategory(BaseModel):
@@ -231,10 +238,16 @@ class StatementCategory(BaseModel):
     actual: Num
     unexpected: Num
     budgeted: Num
+    # On the card payments line in a statement month: the paid-by-card budget items it's compared with.
+    card_items: list[str] = []
 
 
 class IncomeStatement(BaseModel):
     month: str
+    # Which transactions make up the totals; the other source only explains them.
+    totals_from: TotalsFrom
+    has_statement: bool
+    notes: str | None
     total_income: Num
     total_expenses: Num
     net: Num
@@ -243,6 +256,100 @@ class IncomeStatement(BaseModel):
     budgeted_income: Num
     budgeted_expenses: Num
     categories: list[StatementCategory]
+
+
+class MonthNotesIn(BaseModel):
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    notes: str | None = Field(default=None, max_length=20000)
+
+
+class TotalsFromIn(BaseModel):
+    month: str = Field(pattern=r"^\d{4}-\d{2}$")
+    totals_from: TotalsFrom
+
+
+# ---------- Statement import ----------
+
+class PreviewAccount(BaseModel):
+    key: str  # e.g. "sofi-2845"
+    name: str  # e.g. "SoFi Checking 2845"
+    kind: str  # "checking" or "savings"
+    last4: str
+    beginning: Num | None
+    ending: Num | None
+    row_total: Num
+    # Ending - (beginning + rows). Anything but 0 means some lines weren't read.
+    difference: Num | None
+    account_id: int | None  # suggested Balance Sheet account
+
+
+class PreviewRow(BaseModel):
+    key: str  # becomes the transaction's import_hash
+    date: date
+    account_key: str
+    section: str
+    bank_type: str
+    description: str
+    amount: Num  # signed: deposits positive
+    category_id: int | None
+    skip: bool
+    reason: str
+    duplicate: bool  # already imported
+
+
+class StatementPreview(BaseModel):
+    bank: str
+    period_start: date
+    period_end: date
+    month: str
+    accounts: list[PreviewAccount]
+    rows: list[PreviewRow]
+
+
+class ImportAccountIn(BaseModel):
+    key: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=100)
+    beginning: Decimal | None = Field(default=None, max_digits=14, decimal_places=2)
+    ending: Decimal | None = Field(default=None, max_digits=14, decimal_places=2)
+    account_id: int | None = None
+
+
+class ImportRowIn(BaseModel):
+    key: str = Field(min_length=1, max_length=64)
+    date: date
+    account_key: str
+    description: str = Field(min_length=1, max_length=255)
+    amount: Decimal = Field(max_digits=14, decimal_places=2)  # signed
+    category_id: int | None = None
+    skip: bool = False
+
+    @field_validator("amount")
+    @classmethod
+    def not_zero(cls, v: Decimal) -> Decimal:
+        if v == 0:
+            raise ValueError("Amount can't be 0")
+        return v
+
+
+class StatementImportIn(BaseModel):
+    bank: str = Field(min_length=1, max_length=40)
+    file_name: str = Field(min_length=1, max_length=255)
+    period_start: date
+    period_end: date
+    accounts: list[ImportAccountIn]
+    rows: list[ImportRowIn]
+    update_balances: bool = True
+
+
+class StatementImportOut(BaseModel):
+    id: int
+    bank: str
+    file_name: str
+    period_start: date
+    period_end: date
+    accounts: list[dict]
+    transaction_count: int
+    created_at: datetime
 
 
 class IncomeTrendPoint(BaseModel):

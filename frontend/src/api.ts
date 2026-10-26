@@ -31,6 +31,10 @@ import type {
   RevenueShare,
   RevenueShareInput,
   RevenueShareMonth,
+  StatementImport,
+  StatementImportInput,
+  StatementPreview,
+  TotalsFrom,
   Transaction,
   TransactionInput,
 } from './types';
@@ -38,10 +42,11 @@ import type {
 export class ApiError extends Error {}
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const form = body instanceof FormData;
   const response = await fetch(`/api${path}`, {
     method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
@@ -91,6 +96,17 @@ export const api = {
   deleteTransaction: (id: number) => request<void>('DELETE', `/transactions/${id}`),
   incomeStatement: (month: string) => get<IncomeStatement>(`/income-statement${qs({ month })}`),
   incomeTrend: (months = 12) => get<IncomeTrendPoint[]>(`/income-statement/trend${qs({ months })}`),
+  setMonthNotes: (month: string, notes: string) => request<void>('PUT', '/income-statement/notes', { month, notes }),
+  setTotalsFrom: (month: string, totals_from: TotalsFrom) =>
+    request<void>('PUT', '/income-statement/totals-from', { month, totals_from }),
+  previewStatement: (file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return request<StatementPreview>('POST', '/statements/preview', body);
+  },
+  importStatement: (body: StatementImportInput) => request<StatementImport>('POST', '/statements', body),
+  statementImports: (month: string) => get<StatementImport[]>(`/statements${qs({ month })}`),
+  undoStatementImport: (id: number) => request<void>('DELETE', `/statements/${id}`),
 
   holdings: () => get<Holding[]>('/holdings'),
   createHolding: (body: HoldingInput) => request<Holding>('POST', '/holdings', body),

@@ -107,7 +107,7 @@ export default function BalanceSheetPage() {
     if (sheet?.month === month) setDraft(draftFrom(sheet.rows));
   }, [sheet, month]);
 
-  // Synced accounts are read-only this month (live from Stocks) and in future months (no value until then);
+  // Synced accounts are read-only this month (live from Investments) and in future months (no value until then);
   // past months stay editable for entering history. 'YYYY-MM' strings compare in date order.
   const isSyncedMonth = month >= thisMonth();
   const isSynced = (r: BalanceRow) => r.account.sync_from_holdings && isSyncedMonth;
@@ -170,16 +170,16 @@ export default function BalanceSheetPage() {
               {r.account.name}
             </Text>
             {r.account.sync_from_holdings && (
-              <Tooltip label="Value comes from this account's holdings on the Stocks tab. Click to see them.">
+              <Tooltip label="Value comes from this account's holdings on the Investments tab. Click to see them.">
                 <Badge
                   component={Link}
-                  to={`/stocks?account=${r.account.id}`}
+                  to={`/investments?account=${r.account.id}`}
                   size="xs"
                   variant="light"
                   leftSection={<IconLink size={10} />}
                   style={{ cursor: 'pointer' }}
                 >
-                  From Stocks
+                  From Investments
                 </Badge>
               </Tooltip>
             )}
@@ -192,6 +192,11 @@ export default function BalanceSheetPage() {
           <Text size="xs" c="dimmed">
             {subtypeLabel(r.account.subtype)}
           </Text>
+          {change != null && (
+            <div className="show-xs">
+              <Delta value={change} goodWhen={kind === 'asset' ? 'up' : 'down'} size="xs" />
+            </div>
+          )}
         </Table.Td>
         <Table.Td ta="right">
           {isSynced(r) ? (
@@ -201,7 +206,7 @@ export default function BalanceSheetPage() {
           ) : (
             <NumberInput
               size="xs"
-              w={150}
+              w={{ base: 120, xs: 150 }}
               ml="auto"
               prefix="$"
               decimalScale={2}
@@ -218,7 +223,7 @@ export default function BalanceSheetPage() {
             />
           )}
         </Table.Td>
-        <Table.Td ta="right">
+        <Table.Td ta="right" className="hide-xs">
           <Group justify="flex-end">
             {/* Paying down debt is good, so liabilities count "down" as the good direction. */}
             <Delta value={change} goodWhen={kind === 'asset' ? 'up' : 'down'} />
@@ -328,7 +333,7 @@ export default function BalanceSheetPage() {
         }
       />
 
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} mb="xl">
+      <SimpleGrid cols={{ base: 2, lg: 5 }} spacing={{ base: 'sm', sm: 'lg' }} mb="xl">
         <StatCard
           label="Total assets"
           value={money(sheet?.total_assets)}
@@ -421,7 +426,7 @@ export default function BalanceSheetPage() {
               }
             />
           ) : (
-            <Table.ScrollContainer minWidth={520}>
+            <Table.ScrollContainer minWidth={520} className="phone-fit">
               <Table verticalSpacing={6}>
                 <Table.Thead>
                   <Table.Tr>
@@ -429,7 +434,7 @@ export default function BalanceSheetPage() {
                     <Table.Th ta="right" w={170}>
                       {monthLabel(month)}
                     </Table.Th>
-                    <Table.Th ta="right" w={190}>
+                    <Table.Th ta="right" w={190} className="hide-xs">
                       Change vs. last month
                     </Table.Th>
                     <Table.Th w={40} />
@@ -568,8 +573,8 @@ function AccountForm({ account, onDone }: { account: Account | null; onDone: () 
         />
         {form.values.kind === 'asset' && (
           <Switch
-            label="Get balance from Stocks tab"
-            description="Value this account using the holdings you link to it on the Stocks tab, updated with daily prices."
+            label="Get balance from Investments tab"
+            description="Value this account using the holdings you link to it on the Investments tab, updated with daily prices."
             {...form.getInputProps('sync_from_holdings', { type: 'checkbox' })}
           />
         )}

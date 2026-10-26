@@ -52,6 +52,7 @@ import {
   StatCard,
   useAppMutation,
   type SortDir,
+  FilterControl,
 } from '../components/common';
 import { ExpenseDonut } from '../components/ExpenseDonut';
 import { money, moneyCompact, percent, SERIES_ORDER, signedMoney } from '../format';
@@ -364,7 +365,7 @@ export default function CompanyPage() {
       />
 
       {summary && (
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3, xl: 5 }} mb="xl">
+        <SimpleGrid cols={{ base: 2, lg: 3, xl: 5 }} spacing={{ base: 'sm', sm: 'lg' }} mb="xl">
           <StatCard label={`Income · ${year}`} value={money(summary.income)} footer="What the company earned" />
           <StatCard
             label={`Expenses · ${year}`}
@@ -403,8 +404,8 @@ export default function CompanyPage() {
                   }))}
                   dataKey="month"
                   series={[
-                    { name: 'Income', color: 'var(--series-1)' },
-                    { name: 'Expenses', color: 'var(--series-2)' },
+                    { name: 'Income', color: 'var(--chart-income)' },
+                    { name: 'Expenses', color: 'var(--chart-expenses)' },
                   ]}
                   withLegend
                   legendProps={{ verticalAlign: 'top', height: 36, itemSorter: SERIES_ORDER }}
@@ -447,7 +448,7 @@ export default function CompanyPage() {
                 <Select
                   aria-label="Product"
                   size="xs"
-                  w={160}
+                  w={{ base: '100%', xs: 160 }}
                   value={productFilter}
                   onChange={(v) => setProductFilter(v ?? 'all')}
                   allowDeselect={false}
@@ -458,8 +459,8 @@ export default function CompanyPage() {
                   ]}
                 />
               )}
-              <SegmentedControl
-                size="xs"
+              <FilterControl
+                label="Show"
                 value={filter}
                 onChange={(v) => setFilter(v as Filter)}
                 data={[
@@ -484,15 +485,23 @@ export default function CompanyPage() {
               }
             />
           ) : (
-            <Table.ScrollContainer minWidth={720}>
+            <Table.ScrollContainer minWidth={720} className="phone-fit">
               <Table highlightOnHover verticalSpacing="xs">
                 <Table.Thead>
                   <Table.Tr>
-                    <SortableTh label="Date" active dir={entrySort} onSort={toggleEntrySort} w={90} />
+                    <SortableTh label="Date" active dir={entrySort} onSort={toggleEntrySort} w={70} />
                     <Table.Th>Description</Table.Th>
-                    <Table.Th w={150}>Type</Table.Th>
-                    <Table.Th w={220}>Category or member</Table.Th>
-                    {hasProducts && <Table.Th w={170}>Product</Table.Th>}
+                    <Table.Th w={150} className="hide-xs">
+                      Type
+                    </Table.Th>
+                    <Table.Th w={220} className="hide-xs">
+                      Category or member
+                    </Table.Th>
+                    {hasProducts && (
+                      <Table.Th w={170} className="hide-xs">
+                        Product
+                      </Table.Th>
+                    )}
                     <Table.Th ta="right" w={120}>
                       Amount
                     </Table.Th>
@@ -510,11 +519,27 @@ export default function CompanyPage() {
                             {e.notes}
                           </Text>
                         )}
+                        {/* Phones hide the type, category and product columns; they're summarized here. */}
+                        <Stack className="show-xs" gap={2} mt={4} align="flex-start">
+                          <KindBadge kind={e.kind} />
+                          <Text size="xs" c="dimmed">
+                            {[
+                              e.kind === 'funding'
+                                ? `From ${payeeName(e.revenue_share_id) ?? 'a revenue-share payee'}`
+                                : MEMBER_KINDS.includes(e.kind)
+                                  ? memberName(e.member_id)
+                                  : e.category,
+                              hasProducts ? productName(e.product_id) : null,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </Text>
+                        </Stack>
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td className="hide-xs">
                         <KindBadge kind={e.kind} />
                       </Table.Td>
-                      <Table.Td>
+                      <Table.Td className="hide-xs">
                         {e.kind === 'funding' ? (
                           <Text size="sm">From {payeeName(e.revenue_share_id) ?? 'a revenue-share payee'}</Text>
                         ) : (
@@ -534,13 +559,13 @@ export default function CompanyPage() {
                         )}
                       </Table.Td>
                       {hasProducts && (
-                        <Table.Td>
+                        <Table.Td className="hide-xs">
                           <Text size="sm" c={e.product_id == null ? 'dimmed' : undefined}>
                             {productName(e.product_id) ?? '—'}
                           </Text>
                         </Table.Td>
                       )}
-                      <Table.Td ta="right" className="num" fw={500}>
+                      <Table.Td ta="right" className="num" fw={500} style={{ whiteSpace: 'nowrap' }}>
                         {e.kind === 'income' ? '+' : e.kind === 'expense' ? '−' : ''}
                         {money(e.amount)}
                       </Table.Td>
@@ -576,12 +601,13 @@ export default function CompanyPage() {
                   <Table.Tfoot>
                     <Table.Tr>
                       <Table.Th>Total</Table.Th>
-                      <Table.Th colSpan={hasProducts ? 4 : 3}>
+                      <Table.Th>
                         <Text size="xs" c="dimmed" fw={500}>
                           {entriesTotal.label}
                           {repaidShown > 0 && ` · excludes ${money(repaidShown)} that repaid funding`}
                         </Text>
                       </Table.Th>
+                      <Table.Th colSpan={hasProducts ? 3 : 2} className="hide-xs" />
                       <Table.Th ta="right" className="num">
                         {entriesTotal.amount}
                       </Table.Th>
@@ -800,14 +826,20 @@ function Owners({
   const totalShare = summary.members.reduce((s, m) => s + m.profit_share, 0);
   return (
     <>
-      <Table.ScrollContainer minWidth={680}>
+      <Table.ScrollContainer minWidth={680} className="phone-fit">
         <Table verticalSpacing={6} highlightOnHover>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>Member</Table.Th>
-              <Table.Th w={140}>Ownership</Table.Th>
-              <Table.Th ta="right">Contributed {summary.year}</Table.Th>
-              <Table.Th ta="right">Distributed {summary.year}</Table.Th>
+              <Table.Th w={140} className="hide-xs">
+                Ownership
+              </Table.Th>
+              <Table.Th ta="right" className="hide-xs">
+                Contributed {summary.year}
+              </Table.Th>
+              <Table.Th ta="right" className="hide-xs">
+                Distributed {summary.year}
+              </Table.Th>
               <Table.Th ta="right">Share of profit</Table.Th>
               <Table.Th ta="right">Net invested</Table.Th>
               <Table.Th w={70} />
@@ -820,17 +852,20 @@ function Owners({
                   <Text size="sm" fw={500}>
                     {m.name}
                   </Text>
+                  <Text size="xs" c="dimmed" className="show-xs num">
+                    Owns {equity(m.equity_percent)} · in {money(m.contributed_year)} · out {money(m.distributed_year)}
+                  </Text>
                 </Table.Td>
-                <Table.Td>
+                <Table.Td className="hide-xs">
                   <Text size="sm" className="num">
                     {equity(m.equity_percent)}
                   </Text>
                   <Progress value={m.equity_percent} color="var(--series-1)" size="sm" mt={4} aria-hidden />
                 </Table.Td>
-                <Table.Td ta="right" className="num">
+                <Table.Td ta="right" className="num hide-xs">
                   {money(m.contributed_year)}
                 </Table.Td>
-                <Table.Td ta="right" className="num">
+                <Table.Td ta="right" className="num hide-xs">
                   {money(m.distributed_year)}
                 </Table.Td>
                 <Table.Td ta="right" className="num">
@@ -855,11 +890,11 @@ function Owners({
           <Table.Tfoot>
             <Table.Tr>
               <Table.Th>Total</Table.Th>
-              <Table.Th className="num">{equity(summary.equity_assigned)}</Table.Th>
-              <Table.Th ta="right" className="num">
+              <Table.Th className="num hide-xs">{equity(summary.equity_assigned)}</Table.Th>
+              <Table.Th ta="right" className="num hide-xs">
                 {money(summary.contributions_year)}
               </Table.Th>
-              <Table.Th ta="right" className="num">
+              <Table.Th ta="right" className="num hide-xs">
                 {money(summary.distributions_year)}
               </Table.Th>
               <Table.Th ta="right" className="num">
