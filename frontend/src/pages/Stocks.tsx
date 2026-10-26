@@ -84,7 +84,7 @@ type Editing = { holding: Holding | null } | null;
 
 const UNASSIGNED = 'unassigned';
 
-type SortKey = 'ticker' | 'value' | 'allocation' | 'gain';
+type SortKey = 'ticker' | 'value' | 'allocation' | 'gain' | 'return';
 type Sort = { key: SortKey; dir: SortDir };
 const DEFAULT_SORT: Sort = { key: 'ticker', dir: 'asc' };
 const SORT_STORAGE_KEY = 'moneysage.holdings-sort';
@@ -300,7 +300,7 @@ export default function StocksPage() {
               }
             />
           ) : (
-            <Table.ScrollContainer minWidth={900} className="phone-fit">
+            <Table.ScrollContainer minWidth={990} className="phone-fit">
               <Table highlightOnHover verticalSpacing="xs">
                 <Table.Thead>
                   <Table.Tr>
@@ -321,6 +321,7 @@ export default function StocksPage() {
                       Today
                     </Table.Th>
                     {header('gain', 'Gain / loss', 'right', 'hide-xs')}
+                    {header('return', 'Return', 'right', 'hide-xs')}
                     <Table.Th w={70} />
                   </Table.Tr>
                 </Table.Thead>
@@ -360,6 +361,11 @@ export default function StocksPage() {
                     <Table.Th ta="right" className="hide-xs">
                       <Group justify="flex-end">
                         <Delta value={totals.gain} />
+                      </Group>
+                    </Table.Th>
+                    <Table.Th ta="right" className="hide-xs">
+                      <Group justify="flex-end">
+                        <Delta value={returnOf(totals.gain, totals.cost)} format={signedPercent} />
                       </Group>
                     </Table.Th>
                     <Table.Th />
@@ -466,6 +472,10 @@ interface Position {
   lotsWithCost: number;
 }
 
+/** Gain as a share of what was paid; null without a cost (cash, or none entered). */
+const returnOf = (gain: number | null | undefined, cost: number | null | undefined) =>
+  gain != null && cost ? gain / cost : null;
+
 const sumOf = (values: (number | null)[]) => {
   const known = values.filter((v): v is number => v != null);
   return known.length ? known.reduce((s, v) => s + v, 0) : null;
@@ -510,6 +520,7 @@ const COMPARE: Record<SortKey, (a: Position, b: Position) => number> = {
   // Allocation is value over one shared total, so it orders the same as value.
   allocation: byAmount((p) => p.market_value),
   gain: byAmount((p) => p.gain),
+  return: byAmount((p) => returnOf(p.gain, p.cost_basis)),
 };
 // Rows with no figure for the sorted column (no price yet, no cost entered, cash for gain) go last either way.
 const SORT_VALUE: Record<SortKey, ((p: Position) => number | null) | null> = {
@@ -517,6 +528,7 @@ const SORT_VALUE: Record<SortKey, ((p: Position) => number | null) | null> = {
   value: (p) => p.market_value,
   allocation: (p) => p.market_value,
   gain: (p) => p.gain,
+  return: (p) => returnOf(p.gain, p.cost_basis),
 };
 
 function sortPositions(positions: Position[], { key, dir }: Sort) {
@@ -529,10 +541,12 @@ function sortPositions(positions: Position[], { key, dir }: Sort) {
 
 type Figures = Pick<Holding, 'asset_type' | 'quantity' | 'price' | 'price_date' | 'market_value' | 'day_change' | 'cost_per_unit' | 'cost_basis' | 'gain'>;
 
-/** Quantity through gain/loss: shared by single holdings, combined rows, and per-account rows. */
+/** Quantity through return: shared by single holdings, combined rows, and per-account rows. */
 function FigureCells({ f, total, costNote }: { f: Figures; total: number; costNote?: string }) {
   const cash = f.asset_type === 'cash';
   const share = f.market_value != null && total > 0 ? f.market_value / total : null;
+  // Combined rows count only the lots with a cost, in both the gain and the cost basis.
+  const ret = returnOf(f.gain, f.cost_basis);
   return (
     <>
       <Table.Td ta="right" className="num hide-xs">
@@ -556,9 +570,9 @@ function FigureCells({ f, total, costNote }: { f: Figures; total: number; costNo
       </Table.Td>
       <Table.Td ta="right" className="num" fw={500}>
         {money(f.market_value)}
-        {/* Phones hide the allocation and gain columns; both sit under the value instead. */}
+        {/* Phones hide the allocation, gain and return columns; they sit under the value instead. */}
         <Stack gap={0} align="flex-end" className="show-xs">
-          {f.gain != null && <Delta value={f.gain} size="xs" />}
+          {f.gain != null && <Delta value={f.gain} size="xs" suffix={ret != null ? `(${signedPercent(ret)})` : undefined} />}
           {share != null && (
             <Text size="xs" c="dimmed" fw={400}>
               {percent(share)}
@@ -581,6 +595,9 @@ function FigureCells({ f, total, costNote }: { f: Figures; total: number; costNo
       </Table.Td>
       <Table.Td ta="right" className="hide-xs">
         <Group justify="flex-end">{f.gain == null ? <Text size="sm">—</Text> : <Delta value={f.gain} />}</Group>
+      </Table.Td>
+      <Table.Td ta="right" className="hide-xs">
+        <Group justify="flex-end">{ret == null ? <Text size="sm">—</Text> : <Delta value={ret} format={signedPercent} />}</Group>
       </Table.Td>
     </>
   );
@@ -814,6 +831,8 @@ function HoldingForm({ holding, onDone }: { holding: Holding | null; onDone: () 
               <NumberInput
                 label={isCrypto ? 'Cost per coin' : 'Cost per share'}
                 description="Optional: your average price paid"
+                // Hint under the box, so it lines up with Shares beside it.
+                inputWrapperOrder={['label', 'input', 'description', 'error']}
                 prefix="$"
                 decimalScale={6}
                 thousandSeparator=","

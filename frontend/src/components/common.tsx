@@ -61,11 +61,14 @@ export function Delta({
   goodWhen = 'up',
   suffix,
   size = 'sm',
+  format = signedMoney,
 }: {
   value: number | null | undefined;
   goodWhen?: 'up' | 'down';
   suffix?: string;
   size?: 'xs' | 'sm' | 'md';
+  /** Signed text for the value; money by default (signedPercent for a rate). */
+  format?: (value: number) => string;
 }) {
   if (value == null) return null;
   if (value === 0) {
@@ -81,7 +84,7 @@ export function Delta({
     <Group gap={2} wrap="nowrap" className={good ? 'delta-up' : 'delta-down'}>
       <Icon size={14} stroke={2} aria-hidden />
       <Text size={size} inherit className="num" fw={500}>
-        {signedMoney(value)}
+        {format(value)}
         {suffix ? ` ${suffix}` : ''}
       </Text>
     </Group>
