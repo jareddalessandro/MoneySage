@@ -22,6 +22,7 @@ import type {
   CreditCardInput,
   Holding,
   HoldingInput,
+  TradeInput,
   IncomeStatement,
   IncomeTrendPoint,
   NetWorthPoint,
@@ -112,6 +113,8 @@ export const api = {
   createHolding: (body: HoldingInput) => request<Holding>('POST', '/holdings', body),
   updateHolding: (id: number, body: HoldingInput) => request<Holding>('PUT', `/holdings/${id}`, body),
   deleteHolding: (id: number) => request<void>('DELETE', `/holdings/${id}`),
+  /** Returns the updated holding, or null when a sale removed all of it. */
+  tradeHolding: (id: number, body: TradeInput) => request<Holding | null>('POST', `/holdings/${id}/trade`, body),
   portfolioSummary: () => get<PortfolioSummary>('/portfolio/summary'),
   portfolioHistory: (days: number) => get<PortfolioPoint[]>(`/portfolio/history${qs({ days })}`),
   refreshPrices: () => request<RefreshRun>('POST', '/prices/refresh'),

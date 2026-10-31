@@ -266,6 +266,13 @@ export interface HoldingInput {
   notes: string | null;
 }
 
+/** Buy more of a holding or sell some (for cash: deposit or withdraw). `price` is per share, buys only. */
+export interface TradeInput {
+  side: 'buy' | 'sell';
+  quantity: number;
+  price: number | null;
+}
+
 export interface RefreshRun {
   id: number;
   started_at: string;

@@ -457,7 +457,6 @@ export default function CompanyPage() {
               {hasProducts && (
                 <Select
                   aria-label="Product"
-                  size="xs"
                   w={{ base: '100%', xs: 160 }}
                   value={productFilter}
                   onChange={(v) => setProductFilter(v ?? 'all')}

@@ -345,7 +345,6 @@ export default function IncomeStatementPage() {
               {/* Phones hide the category column header, so sorting gets its own control there. */}
               <Select
                 className="show-xs"
-                size="xs"
                 w="100%"
                 aria-label="Sort transactions"
                 allowDeselect={false}

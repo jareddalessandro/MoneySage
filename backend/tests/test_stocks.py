@@ -145,3 +145,81 @@ def test_fractional_cost_per_unit(client, fake_prices):
     assert btc["cost_basis"] == 555.02  # 0.0123 x 45,123.456789 = 555.0185...
     assert btc["market_value"] == 738
     assert btc["gain"] == round(738 - 555.02, 2)
+
+
+def test_buying_more_merges_into_the_holding(client, fake_prices):
+    fake_prices["SOFI"] = [15.0]
+    ira = client.post("/api/accounts", json={
+        "name": "Roth IRA", "kind": "asset", "subtype": "retirement", "sync_from_holdings": True,
+    }).json()
+    first = client.post("/api/holdings", json={
+        "ticker": "SOFI", "asset_type": "stock", "quantity": 200, "cost_per_unit": 15.30, "account_id": ira["id"],
+    }).json()
+
+    # Adding the same ticker to the same account buys more: one holding, share-weighted average cost.
+    merged = client.post("/api/holdings", json={
+        "ticker": "sofi", "asset_type": "stock", "quantity": 100, "cost_per_unit": 12, "account_id": ira["id"],
+        "notes": "dip buy",
+    })
+    assert merged.status_code == 201
+    merged = merged.json()
+    assert merged["id"] == first["id"]
+    assert merged["quantity"] == 300
+    assert merged["cost_per_unit"] == 14.2  # (200 x 15.30 + 100 x 12) / 300
+    assert merged["cost_basis"] == 4260  # 3,060 + 1,200: nothing lost to rounding
+    assert merged["notes"] == "dip buy"
+    assert len(client.get("/api/holdings").json()) == 1
+
+    # The same ticker in another account (or none) stays its own holding.
+    other = client.post("/api/holdings", json={"ticker": "SOFI", "asset_type": "stock", "quantity": 5}).json()
+    assert other["id"] != first["id"]
+
+    # A buy without a price would throw the average off.
+    response = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "buy", "quantity": 10})
+    assert response.status_code == 400
+
+    bought = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "buy", "quantity": 100, "price": 18}).json()
+    assert bought["quantity"] == 400 and bought["cost_per_unit"] == 15.15  # (4,260 + 1,800) / 400
+
+    # Selling keeps the average cost; the synced account follows.
+    sold = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "sell", "quantity": 150}).json()
+    assert sold["quantity"] == 250 and sold["cost_per_unit"] == 15.15
+    sheet = client.get("/api/balance-sheet", params={"month": format_month(current_month())}).json()
+    assert next(r for r in sheet["rows"] if r["account"]["id"] == ira["id"])["balance"] == 250 * 15
+
+    response = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "sell", "quantity": 251})
+    assert response.status_code == 400 and "250" in response.json()["detail"]
+
+    # Selling everything removes the holding.
+    gone = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "sell", "quantity": 250})
+    assert gone.status_code == 200 and gone.json() is None
+    assert [h["id"] for h in client.get("/api/holdings").json()] == [other["id"]]
+
+
+def test_buying_more_without_a_known_cost(client, fake_prices):
+    fake_prices["VOO"] = [500.0]
+    first = client.post("/api/holdings", json={"ticker": "VOO", "asset_type": "etf", "quantity": 2}).json()
+    # The old shares' cost is unknown, so the average stays unknown rather than claiming the new price.
+    merged = client.post("/api/holdings", json={
+        "ticker": "VOO", "asset_type": "etf", "quantity": 1, "cost_per_unit": 480,
+    }).json()
+    assert merged["id"] == first["id"] and merged["quantity"] == 3 and merged["cost_per_unit"] is None
+
+
+def test_cash_deposits_and_withdrawals(client, fake_prices):
+    cash = client.post("/api/holdings", json={"asset_type": "cash", "quantity": 1000}).json()
+    again = client.post("/api/holdings", json={"asset_type": "cash", "quantity": 250.5}).json()
+    assert again["id"] == cash["id"] and again["quantity"] == 1250.5
+
+    after = client.post(f"/api/holdings/{cash['id']}/trade", json={"side": "sell", "quantity": 50.5}).json()
+    assert after["quantity"] == 1200 and after["cost_per_unit"] is None
+
+
+def test_editing_into_a_duplicate_is_refused(client, fake_prices):
+    fake_prices["AAPL"] = [100.0]
+    fake_prices["MSFT"] = [300.0]
+    client.post("/api/holdings", json={"ticker": "AAPL", "asset_type": "stock", "quantity": 1})
+    msft = client.post("/api/holdings", json={"ticker": "MSFT", "asset_type": "stock", "quantity": 1}).json()
+    response = client.put(f"/api/holdings/{msft['id']}", json={"ticker": "AAPL", "asset_type": "stock", "quantity": 1})
+    assert response.status_code == 409
+    assert {h["ticker"] for h in client.get("/api/holdings").json()} == {"AAPL", "MSFT"}

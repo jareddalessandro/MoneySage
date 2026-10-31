@@ -151,6 +151,94 @@ body {
   font-weight: 700;
 }
 
+/* Dropdown lists (Select, Autocomplete, TagsInput) and menus: roomy rounded options on the glass panel,
+   a tonal hover (no lines), and the chosen option in primary. Text is body-md whatever the field's size. */
+/* Mantine names a Select's parts after the Select (mantine-Select-option, not mantine-Combobox-option), so
+   options are matched by their data-combobox-option attribute and the rest by each component's class. */
+.mantine-Select-dropdown,
+.mantine-Autocomplete-dropdown,
+.mantine-TagsInput-dropdown,
+.mantine-Combobox-dropdown,
+.mantine-Menu-dropdown {
+  padding: 0.375rem;
+  border-radius: var(--mantine-radius-md);
+}
+[data-combobox-option],
+.mantine-Menu-item {
+  font-size: var(--mantine-font-size-sm);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--mantine-radius-sm);
+  transition: background-color 80ms ease;
+}
+[data-combobox-option]:where(:hover, [data-combobox-selected]):not([data-combobox-disabled]),
+.mantine-Menu-item:where(:hover, [data-hovered]):not(:disabled, [data-disabled]) {
+  background-color: var(--surface-container-highest);
+  color: var(--mantine-color-text);
+}
+[data-combobox-option][data-checked] {
+  background-color: rgba(76, 214, 255, 0.1);
+  color: var(--primary);
+  font-weight: 600;
+}
+[data-combobox-option][data-checked]:where(:hover, [data-combobox-selected]) {
+  background-color: rgba(76, 214, 255, 0.16);
+  color: var(--primary);
+}
+[data-combobox-option][data-checked] svg {
+  color: var(--primary);
+  opacity: 1;
+}
+/* Group headings (e.g. Income / Expenses in the category picker) in the label-sm style, separated by space
+   instead of Mantine's divider line. */
+.mantine-Select-groupLabel,
+.mantine-Autocomplete-groupLabel,
+.mantine-TagsInput-groupLabel,
+.mantine-Combobox-groupLabel {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1rem;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  padding: 0.5rem 0.75rem 0.25rem;
+}
+.mantine-Select-groupLabel::after,
+.mantine-Autocomplete-groupLabel::after,
+.mantine-TagsInput-groupLabel::after,
+.mantine-Combobox-groupLabel::after {
+  display: none;
+}
+.mantine-Select-group + .mantine-Select-group,
+.mantine-Autocomplete-group + .mantine-Autocomplete-group,
+.mantine-Combobox-group + .mantine-Combobox-group {
+  margin-top: 0.375rem;
+}
+.mantine-Select-empty,
+.mantine-Autocomplete-empty,
+.mantine-TagsInput-empty,
+.mantine-Combobox-empty {
+  font-size: var(--mantine-font-size-sm);
+  padding: 0.75rem;
+}
+
+/* The field itself: the border lifts on hover, and the field and its chevron turn primary while the list is open. */
+.mantine-Select-input:not(:disabled):hover,
+.mantine-Autocomplete-input:not(:disabled):hover,
+.mantine-TagsInput-input:not([data-disabled]):hover {
+  border-color: var(--mantine-color-dark-3);
+}
+.mantine-Select-input:focus,
+.mantine-Select-input[data-expanded],
+.mantine-Select-input[data-expanded]:hover {
+  border-color: var(--primary);
+}
+.mantine-Select-section[data-position='right'] {
+  color: var(--mantine-color-dark-2);
+  transition: color 120ms ease;
+}
+.mantine-Select-root:has(.mantine-Select-input[data-expanded]) .mantine-Select-section[data-position='right'] {
+  color: var(--primary);
+}
+
 /* Ghost border fallback for floating panels that need an edge. */
 .mantine-Popover-dropdown,
 .mantine-Menu-dropdown,
@@ -431,7 +519,7 @@ body {
   }
   .mantine-NavLink-root,
   .mantine-Menu-item,
-  .mantine-Combobox-option {
+  [data-combobox-option] {
     min-height: 2.75rem;
   }
   /* Sortable headers: a taller invisible tap area, without making the header row taller. */

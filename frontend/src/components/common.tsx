@@ -215,7 +215,6 @@ export function FilterControl({
   const phone = useMediaQuery('(max-width: 36em)');
   return phone ? (
     <Select
-      size="xs"
       w="100%"
       aria-label={label}
       data={data}

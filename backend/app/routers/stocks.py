@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -13,6 +13,7 @@ from app.schemas import (
     PortfolioPoint,
     PortfolioSummary,
     RefreshRunOut,
+    TradeIn,
 )
 from app.services.portfolio import (
     latest_prices,
@@ -38,6 +39,39 @@ def get_holding(db: Session, holding_id: int) -> Holding:
     if holding is None:
         raise HTTPException(404, "Holding not found")
     return holding
+
+
+def find_position(
+    db: Session, asset_type: AssetType, ticker: str, account_id: int | None, exclude_id: int | None = None
+) -> Holding | None:
+    """The holding of this ticker in this account, if there is one (there's at most one per account)."""
+    query = select(Holding).where(
+        Holding.asset_type == asset_type,
+        Holding.ticker == ticker,
+        Holding.account_id.is_(None) if account_id is None else Holding.account_id == account_id,
+    )
+    if exclude_id is not None:
+        query = query.where(Holding.id != exclude_id)
+    return db.scalars(query).first()
+
+
+def _quantity(value: Decimal) -> str:
+    return f"{value.normalize():,f}"
+
+
+def buy_more(holding: Holding, quantity: Decimal, price: Decimal | None) -> None:
+    """Add shares to a holding. Its cost per share becomes the share-weighted average of old and new.
+
+    Cash just adds the dollars. If the existing shares have no cost entered, the average stays unknown.
+    """
+    if holding.asset_type != AssetType.cash and holding.cost_per_unit is not None:
+        if price is None:
+            raise HTTPException(
+                400, f"Enter the price paid per share, so the average cost of your {holding.ticker} stays accurate"
+            )
+        total = holding.quantity * holding.cost_per_unit + quantity * price
+        holding.cost_per_unit = (total / (holding.quantity + quantity)).quantize(Decimal("0.000001"), ROUND_HALF_UP)
+    holding.quantity += quantity
 
 
 def _apply(db: Session, holding: Holding, body: HoldingIn) -> None:
@@ -98,9 +132,16 @@ def list_holdings(db: Session = Depends(get_db)):
 
 @router.post("/holdings", response_model=HoldingOut, status_code=201)
 def create_holding(body: HoldingIn, db: Session = Depends(get_db)):
+    """Add a holding. A ticker already held in that account is bought more of instead of listed twice."""
     holding = Holding()
     _apply(db, holding, body)
-    db.add(holding)
+    existing = find_position(db, holding.asset_type, holding.ticker, holding.account_id)
+    if existing is None:
+        db.add(holding)
+    else:
+        buy_more(existing, holding.quantity, holding.cost_per_unit)
+        existing.notes = existing.notes or holding.notes
+        holding = existing
     db.flush()
     sync_account_snapshots(db)
     db.commit()
@@ -111,10 +152,38 @@ def create_holding(body: HoldingIn, db: Session = Depends(get_db)):
 def update_holding(holding_id: int, body: HoldingIn, db: Session = Depends(get_db)):
     holding = get_holding(db, holding_id)
     _apply(db, holding, body)
+    if find_position(db, holding.asset_type, holding.ticker, holding.account_id, exclude_id=holding.id):
+        what = "cash" if holding.asset_type == AssetType.cash else holding.ticker
+        raise HTTPException(
+            409, f"There's already a {what} holding in that account. Buy more on that one, or delete one of them."
+        )
     db.flush()
     sync_account_snapshots(db)
     db.commit()
     return _holdings_out(db, [holding])[0]
+
+
+@router.post("/holdings/{holding_id}/trade", response_model=HoldingOut | None)
+def trade(holding_id: int, body: TradeIn, db: Session = Depends(get_db)):
+    """Buy more or sell some. A sale keeps the average cost per share; selling everything removes the
+    holding (and returns null)."""
+    holding = get_holding(db, holding_id)
+    remaining: Holding | None = holding
+    if body.side == "buy":
+        buy_more(holding, body.quantity, body.price)
+    elif body.quantity > holding.quantity:
+        unit = "" if holding.asset_type == AssetType.cash else f" {holding.ticker}"
+        amount = f"${holding.quantity:,.2f}" if holding.asset_type == AssetType.cash else _quantity(holding.quantity)
+        raise HTTPException(400, f"That's more than you hold: {amount}{unit}")
+    elif body.quantity == holding.quantity:
+        db.delete(holding)
+        remaining = None
+    else:
+        holding.quantity -= body.quantity
+    db.flush()
+    sync_account_snapshots(db)
+    db.commit()
+    return _holdings_out(db, [remaining])[0] if remaining else None
 
 
 @router.delete("/holdings/{holding_id}", status_code=204)

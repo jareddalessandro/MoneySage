@@ -346,7 +346,6 @@ function AccountCard({
       )}
       <Select
         mt="xs"
-        size="xs"
         label="Balance Sheet account"
         placeholder="Don't link"
         data={options}
@@ -377,7 +376,6 @@ function ReviewRow({
     <CategorySelect
       label={null}
       aria-label="Category"
-      size="xs"
       mt={phone ? 6 : undefined}
       kind={kind}
       value={choice.category_id}

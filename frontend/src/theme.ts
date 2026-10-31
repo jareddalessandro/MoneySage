@@ -77,7 +77,14 @@ export const theme = createTheme({
     AppShell: { defaultProps: { withBorder: false } },
     Modal: { defaultProps: { radius: 'md', shadow: 'md', overlayProps: { backgroundOpacity: 0.5, blur: 2 } } },
     Popover: { defaultProps: { shadow: 'md' } },
-    Menu: { defaultProps: { shadow: 'md' } },
+    Menu: { defaultProps: { shadow: 'md', offset: 6, transitionProps: { transition: 'pop', duration: 120 } } },
+    // Every dropdown list (Select, Autocomplete, TagsInput) opens through Combobox: a small gap below the
+    // field and a quick pop-in. Option styling lives in styles.css.
+    Combobox: { defaultProps: { shadow: 'md', offset: 6, transitionProps: { transition: 'pop', duration: 120 } } },
+    // The check for the chosen option sits at the right, so option text lines up with the field's text.
+    Select: { defaultProps: { checkIconPosition: 'right', maxDropdownHeight: 300 } },
+    Autocomplete: { defaultProps: { maxDropdownHeight: 300 } },
+    TagsInput: { defaultProps: { maxDropdownHeight: 300 } },
     Tooltip: { defaultProps: { color: 'dark.5' } },
   },
 });

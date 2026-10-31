@@ -372,6 +372,14 @@ class HoldingIn(BaseModel):
     notes: str | None = None
 
 
+class TradeIn(BaseModel):
+    """Buy more of a holding or sell some of it (for cash: deposit or withdraw dollars)."""
+
+    side: Literal["buy", "sell"]
+    quantity: Decimal = Field(gt=0, max_digits=24, decimal_places=8)
+    price: Decimal | None = Field(default=None, ge=0, max_digits=20, decimal_places=6)  # per share, buys only
+
+
 class HoldingOut(BaseModel):
     id: int
     ticker: str

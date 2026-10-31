@@ -90,6 +90,10 @@ docker compose exec frontend npx tsc --noEmit
   - It's never fetched: `refresh_all` and `_apply` skip it, so the real stock CASH (Pathward) only matters for stock-type holdings.
   - `portfolio_history` adds it as a flat amount each day.
   - No migration was needed: enums are VARCHAR without a CHECK constraint.
+- **One holding per ticker per account** (asset type + ticker + account, `find_position`; not a DB constraint, the API keeps it):
+  - `POST /holdings` for a ticker already held in that account buys more of it (`buy_more`): quantities add, and `cost_per_unit` becomes the share-weighted average `(q1·c1 + q2·p) / (q1+q2)`, rounded to 6 places. A price is required (400) when the holding has a cost; if the old shares have no cost, the average stays null rather than taking the new price. Cash just adds dollars. The add form shows "You already hold …" with the resulting shares/average and an "Add to holding" button.
+  - `POST /holdings/{id}/trade` (`side` buy/sell, `quantity`, `price`): the "Buy or sell" row action (Deposit / Withdraw for cash). Its buy side shows no resulting shares/average/cost basis line (the user removed it); sells still say what's left or that the holding is removed. Sales use the average-cost method: quantity drops, cost per share stays. Selling more than held is 400; selling exactly all deletes the holding and returns null. Realized gains aren't tracked.
+  - `PUT` that would turn a holding into a duplicate (ticker/type/account) is 409. Edit stays for corrections (typing the shares or average cost directly).
 - **Cost basis:** holdings store `cost_per_unit` (average price per share/coin, `Numeric(20,6)`). `Holding.cost_basis` is a derived property (quantity × cost_per_unit, rounded to the cent) used for gains and the "invested" total. The API returns both.
 - **Holdings table grouping (frontend only, `groupPositions` in `Stocks.tsx`):** holdings are grouped by asset type + ticker.
   - A ticker held in several accounts shows one row with Account "Multiple", totals, and a share-weighted avg cost over the lots that have a cost. It notes "n of m accounts" if some lots lack a cost.
@@ -183,6 +187,11 @@ docker compose exec frontend npx tsc --noEmit
   - Menus, selects and popovers keep the blur but are 94% opaque, because at 70% the text of the form behind them showed through.
   - The sticky modal header has its own near-opaque fill.
   - Chart hover popups (every Mantine chart uses `.mantine-ChartTooltip-tooltip`) are 97% opaque. Overlays drawn on a chart, like the donut's center total, go *before* the chart in the DOM so the tooltip paints over them.
+- **Dropdowns** (Select, Autocomplete, TagsInput, and Menu to match):
+  - Selects use the standard size (36px, 14px text), never `size="xs"`: the user found the small ones too small.
+  - Theme defaults (`theme.ts`): Combobox opens 6px below the field with a quick `pop`, the chosen option's check sits on the right, lists cap at 300px.
+  - `styles.css`: options are 14px with 0.5rem × 0.75rem padding and rounded corners on the glass panel, hover is `surface_container_highest`, and the chosen option is primary text on a 10% primary tint. Group labels use the label-sm style with Mantine's divider line removed (no-line rule). The open field gets a primary border and chevron.
+  - Mantine names a Select's parts after the Select (`mantine-Select-option`, not `mantine-Combobox-option`), so CSS matches options by `[data-combobox-option]` and other parts by each component's class.
 - **Buttons:**
   - `<Button>` defaults to `variant="gradient"`: primary #4cd6ff → primary_container #009dc1 at 135°, bold dark `on_primary` text, `xl` radius. Use it for the page's main CTA.
   - `variant="default"` is the ghost secondary style. Destructive confirms use `color="red" variant="filled"`.

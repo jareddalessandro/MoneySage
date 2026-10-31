@@ -200,8 +200,7 @@ export function IncomeBreakdownCard({ combined, items }: { combined: PaycheckBre
       <Group justify="space-between" wrap="wrap" gap="xs">
         {items.length > 1 ? (
           <Select
-            size="xs"
-            w={210}
+            w={230}
             aria-label="Which paycheck"
             allowDeselect={false}
             value={single ? String(single.budget_item_id) : COMBINED}
