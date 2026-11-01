@@ -95,7 +95,7 @@ class PdfKit:
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
             buffer, pagesize=page, leftMargin=0.75 * inch, rightMargin=0.75 * inch, topMargin=0.75 * inch,
-            bottomMargin=0.8 * inch, title=title, author="MoneySage",
+            bottomMargin=0.8 * inch, title=title, author="Tallyvio",
         )
         doc.build(story, onFirstPage=footer, onLaterPages=footer)
         return buffer.getvalue()

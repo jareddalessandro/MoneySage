@@ -8,21 +8,22 @@ import pytest
 # Point the app at a throwaway database before anything imports app.config. The app connects as a
 # restricted role, as in production, so row-level security is exercised by every test. TEST_WITHOUT_RLS=1
 # connects as the owner instead, which checks that the app's own household and company filters hold up alone.
-MAIN_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg://moneysage:moneysage@db:5432/moneysage")
-TEST_URL = MAIN_URL.rsplit("/", 1)[0] + "/moneysage_test"
+MAIN_URL = os.environ.get("DATABASE_URL", "postgresql+psycopg://tallyvio:tallyvio@db:5432/tallyvio")
+TEST_URL = MAIN_URL.rsplit("/", 1)[0] + "/tallyvio_test"
 RLS = os.environ.get("TEST_WITHOUT_RLS") != "1"
 os.environ["DATABASE_URL"] = TEST_URL
-os.environ["APP_DB_USER"] = "moneysage_test_app"
-os.environ["APP_DB_PASSWORD"] = "moneysage-test-app" if RLS else ""
+os.environ["APP_DB_USER"] = "tallyvio_test_app"
+os.environ["APP_DB_PASSWORD"] = "tallyvio-test-app" if RLS else ""
 os.environ["AUTH_MODE"] = "none"
 os.environ["ENABLE_SCHEDULER"] = "false"
+os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 
 def _ensure_test_database() -> None:
     admin = MAIN_URL.replace("postgresql+psycopg://", "postgresql://")
     with psycopg.connect(admin, autocommit=True) as conn:
-        if not conn.execute("SELECT 1 FROM pg_database WHERE datname = 'moneysage_test'").fetchone():
-            conn.execute("CREATE DATABASE moneysage_test")
+        if not conn.execute("SELECT 1 FROM pg_database WHERE datname = 'tallyvio_test'").fetchone():
+            conn.execute("CREATE DATABASE tallyvio_test")
 
 
 _ensure_test_database()
@@ -85,7 +86,7 @@ def fake_prices(monkeypatch):
 def client():
     # Runs lifespan, which creates the local user and their household. Sends the header the app's own
     # requests carry (see require_csrf_header).
-    with TestClient(app, headers={"X-Requested-With": "moneysage"}) as c:
+    with TestClient(app, headers={"X-Requested-With": "tallyvio"}) as c:
         yield c
 
 

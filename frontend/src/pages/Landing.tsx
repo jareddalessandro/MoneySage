@@ -25,7 +25,7 @@ const FEATURES = [
   {
     icon: IconFileInvoice,
     title: 'Import your bank statement',
-    text: 'Upload a statement PDF and review each line before it lands. MoneySage remembers how you categorized things last time.',
+    text: 'Upload a statement PDF and review each line before it lands. Tallyvio remembers how you categorized things last time.',
   },
   {
     icon: IconReceipt2,
@@ -65,7 +65,7 @@ export default function LandingPage({ site }: { site: Site | undefined }) {
       <Container size="lg" px="md">
         <Group justify="space-between" py="lg">
           <Text className="headline" fw={800} size="lg" lts="-0.01em">
-            💰 MoneySage
+            💰 Tallyvio
           </Text>
           <GoogleSignInButton size="sm" label="Sign in" />
         </Group>
@@ -137,7 +137,7 @@ export default function LandingPage({ site }: { site: Site | undefined }) {
             <SectionHeading eyebrow="Privacy" title="Your data stays yours" />
             <Stack gap="md">
               <Point icon={<IconLock size={20} stroke={1.6} />} title="No ads, no selling, no bank logins">
-                We don't sell your data or show you ads, and MoneySage never connects to your bank. Statement PDFs are
+                We don't sell your data or show you ads, and Tallyvio never connects to your bank. Statement PDFs are
                 read and then discarded.
               </Point>
               <Point icon={<IconFileInvoice size={20} stroke={1.6} />} title="Take it with you">
@@ -245,7 +245,7 @@ export function SiteFooter({ site }: { site: Site | undefined }) {
     <Container size="lg" px="md" py="xl">
       <Group justify="space-between" gap="sm" wrap="wrap">
         <Text size="xs" c="dimmed">
-          © {new Date().getFullYear()} {site?.operator_name ?? 'MoneySage'}. MoneySage isn't a bank or a financial
+          © {new Date().getFullYear()} {site?.operator_name ?? 'Tallyvio'}. Tallyvio isn't a bank or a financial
           adviser.
         </Text>
         <Group gap="lg">

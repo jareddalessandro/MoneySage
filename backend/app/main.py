@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app import google_oauth
 from app.config import settings
+from app.ratelimit import rate_limit
 from app.database import system_session
 from app.routers import (
     auth,
@@ -55,13 +56,19 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="MoneySage", lifespan=lifespan)
+app = FastAPI(
+    title="Tallyvio",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.api_docs else None,
+    redoc_url="/redoc" if settings.api_docs else None,
+    openapi_url="/openapi.json" if settings.api_docs else None,
+)
 
 # Requests that change something must carry this header, which the app's own fetches add. A form or link on
 # another website can't add custom headers (and a script there can't without a CORS preflight, which this
 # app never allows), so this blocks cross-site request forgery, with or without sign-in.
 CSRF_HEADER = "X-Requested-With"
-CSRF_VALUE = "moneysage"
+CSRF_VALUE = "tallyvio"
 
 
 @app.middleware("http")
@@ -71,8 +78,12 @@ async def require_csrf_header(request: Request, call_next):
         and request.url.path.startswith("/api/")
         and request.headers.get(CSRF_HEADER) != CSRF_VALUE
     ):
-        return JSONResponse({"detail": "This request didn't come from the MoneySage app"}, status_code=403)
+        return JSONResponse({"detail": "This request didn't come from the Tallyvio app"}, status_code=403)
     return await call_next(request)
+
+
+# Added last, so it runs first: over-limit requests are turned away before anything else.
+app.middleware("http")(rate_limit)
 
 
 for module in (auth, me, sharing, categories, budget, balance_sheet, transactions, statements, stocks, credit_cards, companies, backup):

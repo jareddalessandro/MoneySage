@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 # Holds the login attempt between leaving for Google and coming back. Lax, because the callback is a
 # top-level navigation from Google, which Lax cookies are sent with.
-ATTEMPT_COOKIE = "moneysage_oauth"
+ATTEMPT_COOKIE = "tallyvio_oauth"
 ATTEMPT_MINUTES = 10
 
 

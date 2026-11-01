@@ -470,7 +470,7 @@ export interface RevenueShareMonth {
   balance: number;
 }
 
-/** What an import of a MoneySage export file brought in. */
+/** What an import of a Tallyvio export file brought in. */
 export interface ImportResult {
   household: boolean;
   /** Names of the companies added. */

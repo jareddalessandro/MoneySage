@@ -23,7 +23,7 @@ from app.months import today_in
 from app.seed import seed_categories
 
 READ_METHODS = {"GET", "HEAD", "OPTIONS"}
-LOCAL_EMAIL = "local@moneysage.invalid"
+LOCAL_EMAIL = "local@tallyvio.invalid"
 DEFAULT_HOUSEHOLD_NAME = "Household"
 
 

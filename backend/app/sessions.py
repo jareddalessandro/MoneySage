@@ -18,7 +18,7 @@ TOUCH_EVERY = timedelta(hours=1)
 def cookie_name() -> str:
     # The __Host- prefix makes browsers refuse the cookie unless it's Secure, host-only and for the whole
     # site, so another subdomain can't set or overwrite it. It needs https, so plain-http installs go without.
-    return "__Host-moneysage_session" if settings.secure_cookies else "moneysage_session"
+    return "__Host-tallyvio_session" if settings.secure_cookies else "tallyvio_session"
 
 
 def _hash(token: str) -> str:

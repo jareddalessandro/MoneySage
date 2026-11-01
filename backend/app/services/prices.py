@@ -1,22 +1,30 @@
-"""Price fetching via yfinance, kept behind this module so the provider can be swapped."""
+"""Daily prices from a market-data provider (PRICE_PROVIDER), and the refresh runs that store them.
+
+Everything else calls fetch_history, so providers can be swapped without touching the rest of the app.
+"yahoo" (yfinance, unofficial and for personal use) is the default so an offline install works with no
+account; "tiingo" needs TIINGO_API_KEY. Showing prices to other people generally needs a provider plan
+that allows display or redistribution; see .env.example.
+"""
 
 import logging
+import re
 import warnings
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
-import pandas as pd
-import yfinance as yf
+import httpx
 from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import AssetType, Holding, PriceQuote, PriceRefreshRun
 
 log = logging.getLogger(__name__)
 
-# yfinance triggers pandas deprecation warnings on every call; they aren't actionable here.
-warnings.filterwarnings("ignore", module="yfinance")
+TIINGO_URL = "https://api.tiingo.com"
+# Crypto tickers are stored like BTC-USD (normalize_ticker); share classes like BRK-B aren't crypto.
+CRYPTO_RE = re.compile(r"^([A-Z0-9]+)-(USD|USDT|USDC|EUR|GBP|BTC|ETH)$")
 
 
 class PriceFetchError(Exception):
@@ -24,7 +32,70 @@ class PriceFetchError(Exception):
 
 
 def fetch_history(ticker: str, period: str) -> list[tuple[date, Decimal]]:
-    """Daily closes for a ticker. period is a yfinance period string such as '7d' or '1y'."""
+    """Daily closes for a ticker, oldest first. period is like '7d' or '1y'."""
+    if settings.price_provider == "tiingo":
+        return _tiingo_history(ticker, period)
+    return _yahoo_history(ticker, period)
+
+
+def _period_start(period: str, today: date | None = None) -> date:
+    today = today or datetime.now(timezone.utc).date()
+    match = re.fullmatch(r"(\d+)(d|mo|y)", period)
+    if not match:
+        raise ValueError(f"Unknown period {period!r}")
+    n, unit = int(match[1]), match[2]
+    days = n if unit == "d" else n * 31 if unit == "mo" else n * 366
+    return today - timedelta(days=days)
+
+
+def _decimal(value) -> Decimal:
+    return Decimal(str(round(float(value), 6)))
+
+
+def _tiingo_history(ticker: str, period: str) -> list[tuple[date, Decimal]]:
+    if not settings.tiingo_api_key:
+        raise PriceFetchError(f"{ticker}: TIINGO_API_KEY isn't set")
+    headers = {"Authorization": f"Token {settings.tiingo_api_key}", "Content-Type": "application/json"}
+    start = _period_start(period).isoformat()
+    crypto = CRYPTO_RE.match(ticker)
+    try:
+        if crypto:
+            response = httpx.get(
+                f"{TIINGO_URL}/tiingo/crypto/prices",
+                params={"tickers": f"{crypto[1]}{crypto[2]}".lower(), "startDate": start, "resampleFreq": "1day"},
+                headers=headers,
+                timeout=20,
+            )
+        else:
+            response = httpx.get(
+                f"{TIINGO_URL}/tiingo/daily/{ticker.lower()}/prices",
+                params={"startDate": start},
+                headers=headers,
+                timeout=20,
+            )
+    except httpx.HTTPError as exc:
+        raise PriceFetchError(f"{ticker}: {exc}") from exc
+    if response.status_code == 404:
+        return []  # Tiingo doesn't know the ticker
+    if response.status_code != 200:
+        raise PriceFetchError(f"{ticker}: Tiingo answered {response.status_code}")
+    data = response.json()
+    rows = (data[0].get("priceData", []) if data else []) if crypto else data
+    closes = {}
+    for row in rows:
+        if row.get("close") is not None:
+            # Dates come as ISO timestamps (UTC midnight for crypto days, like Yahoo's).
+            closes[date.fromisoformat(row["date"][:10])] = _decimal(row["close"])
+    return sorted(closes.items())
+
+
+def _yahoo_history(ticker: str, period: str) -> list[tuple[date, Decimal]]:
+    # Imported here so installs on another provider don't load pandas and yfinance (memory on small servers).
+    import pandas as pd
+    import yfinance as yf
+
+    # yfinance triggers pandas deprecation warnings on every call; they aren't actionable here.
+    warnings.filterwarnings("ignore", module="yfinance")
     try:
         t = yf.Ticker(ticker)
         df = t.history(period=period, interval="1d", auto_adjust=False)
@@ -39,7 +110,7 @@ def fetch_history(ticker: str, period: str) -> list[tuple[date, Decimal]]:
                 closes.iloc[-1] = last_price
     except Exception as exc:  # yfinance raises a variety of exception types
         raise PriceFetchError(f"{ticker}: {exc}") from exc
-    return [(ts.date(), Decimal(str(round(float(val), 6)))) for ts, val in closes.dropna().items()]
+    return [(ts.date(), _decimal(val)) for ts, val in closes.dropna().items()]
 
 
 def store_quotes(db: Session, ticker: str, quotes: list[tuple[date, Decimal]]) -> None:

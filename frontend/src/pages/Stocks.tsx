@@ -92,7 +92,7 @@ const UNASSIGNED = 'unassigned';
 type SortKey = 'ticker' | 'value' | 'allocation' | 'gain' | 'return';
 type Sort = { key: SortKey; dir: SortDir };
 const DEFAULT_SORT: Sort = { key: 'ticker', dir: 'asc' };
-const SORT_STORAGE_KEY = 'moneysage.holdings-sort';
+const SORT_STORAGE_KEY = 'tallyvio.holdings-sort';
 
 // The chosen sort is a per-browser convenience; storage can be unavailable, so fall back quietly.
 function loadSort(): Sort {

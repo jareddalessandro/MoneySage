@@ -62,7 +62,7 @@ from app.schemas import (
     TransactionIn,
 )
 
-FORMAT = "moneysage-export"
+FORMAT = "tallyvio-export"
 VERSION = 1
 Money = Field(max_digits=14, decimal_places=2)
 
@@ -178,7 +178,8 @@ class XCompany(CompanyIn):
 
 
 class ExportFile(BaseModel):
-    format: Literal["moneysage-export"] = FORMAT
+    # Files exported before the app was renamed say "moneysage-export"; they're the same format.
+    format: Literal["tallyvio-export", "moneysage-export"] = FORMAT
     version: Literal[1] = VERSION
     exported_at: datetime
     household: XHousehold | None = None

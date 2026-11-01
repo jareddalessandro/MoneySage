@@ -1,0 +1,10 @@
+# The web image builds from the repository root; keep secrets, data and real statements out of the context.
+.git
+.env
+deploy/.env
+backups
+examples
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache

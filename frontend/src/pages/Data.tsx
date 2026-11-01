@@ -27,7 +27,7 @@ export default function DataPage() {
     <>
       <PageHeader
         title="Export & import"
-        description="Download a copy of your data, or bring in a file exported from another MoneySage, such as an offline install."
+        description="Download a copy of your data, or bring in a file exported from another Tallyvio, such as an offline install."
       />
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="lg">
         <ExportCard />

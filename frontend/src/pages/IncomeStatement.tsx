@@ -75,7 +75,7 @@ type Editing = { txn: Transaction | null; unexpected?: boolean; kind?: CategoryK
 
 type TxnSortKey = 'date' | 'category' | 'amount';
 type TxnSort = { key: TxnSortKey; dir: SortDir };
-const TXN_SORT_KEY = 'moneysage.transactions-sort';
+const TXN_SORT_KEY = 'tallyvio.transactions-sort';
 const DEFAULT_TXN_SORT: TxnSort = { key: 'date', dir: 'desc' };
 
 function loadTxnSort(): TxnSort {
@@ -591,7 +591,7 @@ function StatementHeader({
   );
 }
 
-const BY_CATEGORY_KEY = 'moneysage.budget-by-category';
+const BY_CATEGORY_KEY = 'tallyvio.budget-by-category';
 
 function loadByCategory(): boolean {
   try {

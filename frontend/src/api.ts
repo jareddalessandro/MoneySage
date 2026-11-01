@@ -56,13 +56,13 @@ export class ApiError extends Error {
 }
 
 /** Fired when a request finds the session gone (signed out elsewhere, or expired). */
-export const SIGNED_OUT_EVENT = 'moneysage:signed-out';
+export const SIGNED_OUT_EVENT = 'tallyvio:signed-out';
 
 /** The backend refuses changes without this header, so other websites can't make them (see main.py). */
-const APP_HEADER = { 'X-Requested-With': 'moneysage' };
+const APP_HEADER = { 'X-Requested-With': 'tallyvio' };
 
 // Which household requests work in (X-Household-Id). Unset means the backend's default: your own.
-const HOUSEHOLD_KEY = 'moneysage.household';
+const HOUSEHOLD_KEY = 'tallyvio.household';
 let householdId: number | null = (() => {
   try {
     const saved = Number(localStorage.getItem(HOUSEHOLD_KEY));
@@ -119,7 +119,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 async function download(path: string): Promise<void> {
   const response = await fetch(`/api${path}`, { headers: baseHeaders() });
   if (!response.ok) throw await failure(response);
-  const name = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? 'moneysage.json';
+  const name = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? 'tallyvio.json';
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement('a');
   link.href = url;

@@ -65,7 +65,7 @@ export default function OnboardingPage({ me }: { me: Me }) {
         <form onSubmit={submit}>
           <Stack gap="lg">
             <Text className="headline" fw={800} size="lg" lts="-0.01em">
-              💰 MoneySage
+              💰 Tallyvio
             </Text>
             <div>
               <Title order={1} fz="1.75rem" lts="-0.01em" mb={6}>
@@ -113,7 +113,7 @@ export default function OnboardingPage({ me }: { me: Me }) {
             </Button>
             {setup && (
               <Text size="xs" c="dimmed">
-                Moving from an offline MoneySage? After this, open Export &amp; import and bring in your export file.
+                Moving from an offline Tallyvio? After this, open Export &amp; import and bring in your export file.
               </Text>
             )}
           </Stack>

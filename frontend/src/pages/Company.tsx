@@ -153,7 +153,7 @@ type MemberEditing = { member: CompanyMember | null } | null;
 type ProductEditing = { product: CompanyProduct | null } | null;
 type ShareEditing = { share: RevenueShare | null } | null;
 
-const ENTRY_SORT_KEY = 'moneysage.company-entries-sort';
+const ENTRY_SORT_KEY = 'tallyvio.company-entries-sort';
 
 // Date order is a per-browser convenience; storage can be unavailable, so fall back quietly.
 function loadEntrySort(): SortDir {
@@ -360,10 +360,10 @@ export default function CompanyPage() {
                 </Text>
                 <Menu.Label>Backup</Menu.Label>
                 <Menu.Item leftSection={<IconDatabaseExport size={14} />} onClick={exportCompany}>
-                  MoneySage file
+                  Tallyvio file
                 </Menu.Item>
                 <Text size="xs" c="dimmed" px="sm" py={6}>
-                  The whole company, all years, to import into another MoneySage.
+                  The whole company, all years, to import into another Tallyvio.
                 </Text>
               </Menu.Dropdown>
             </Menu>
