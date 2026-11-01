@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import update
 
-from app.database import SessionLocal
+from app.database import system_session
 from app.models import BalanceSnapshot
 from app.months import add_months, current_month, format_month
 from app.services.prices import refresh_all
@@ -132,11 +132,11 @@ def test_month_end_balance_captured_after_the_fact(client, fake_prices):
         {"account_id": ira, "balance": 222},  # edited by hand after the month ended
     ]})
     mid_month = datetime.combine(month_end - timedelta(days=10), datetime.min.time(), tzinfo=timezone.utc)
-    with SessionLocal() as db:
+    with system_session() as db:
         db.execute(update(BalanceSnapshot).where(BalanceSnapshot.account_id == brokerage).values(updated_at=mid_month))
         db.commit()
 
-    with SessionLocal() as db:
+    with system_session() as db:
         refresh_all(db)
 
     rows = {r["account"]["id"]: r["balance"]
@@ -146,7 +146,7 @@ def test_month_end_balance_captured_after_the_fact(client, fake_prices):
     assert new not in rows or rows[new] is None  # missing months aren't backfilled
 
     # Finalized once: a later refresh doesn't touch it again.
-    with SessionLocal() as db:
+    with system_session() as db:
         db.execute(update(BalanceSnapshot).where(BalanceSnapshot.account_id == brokerage).values(balance=5))
         db.commit()
         refresh_all(db)

@@ -7,7 +7,7 @@ from decimal import Decimal
 
 import pandas as pd
 import yfinance as yf
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -65,14 +65,19 @@ def load_ticker(db: Session, ticker: str) -> bool:
     return bool(quotes)
 
 
-def refresh_all(db: Session) -> PriceRefreshRun:
+def refresh_all(db: Session, household_id: int | None = None) -> PriceRefreshRun:
+    """Fetch recent closes for one household's tickers, or (household_id None, the scheduled run) everyone's,
+    then update synced account balances."""
     from app.services.portfolio import finalize_previous_month, sync_account_snapshots
 
-    run = PriceRefreshRun(status="running")
+    run = PriceRefreshRun(status="running", household_id=household_id)
     db.add(run)
     db.commit()
 
-    tickers = sorted(set(db.scalars(select(Holding.ticker).where(Holding.asset_type != AssetType.cash))))
+    query = select(Holding.ticker).where(Holding.asset_type != AssetType.cash)
+    if household_id is not None:
+        query = query.where(Holding.household_id == household_id)
+    tickers = sorted(set(db.scalars(query)))
     failures: list[str] = []
     updated = 0
     for ticker in tickers:
@@ -88,8 +93,8 @@ def refresh_all(db: Session) -> PriceRefreshRun:
         store_quotes(db, ticker, quotes)
         updated += 1
 
-    finalize_previous_month(db)
-    sync_account_snapshots(db)
+    finalize_previous_month(db, household_id)
+    sync_account_snapshots(db, household_id)
 
     run.finished_at = datetime.now(timezone.utc)
     run.tickers_updated = updated
@@ -100,15 +105,24 @@ def refresh_all(db: Session) -> PriceRefreshRun:
     else:
         run.status = "success"
     run.message = f"No data for: {', '.join(failures)}" if failures else None
+    run.failed_tickers = failures
     db.commit()
     log.info("Price refresh %s: %d updated, failures=%s", run.status, updated, failures)
     return run
 
 
-def last_successful_run(db: Session) -> PriceRefreshRun | None:
+def runs_for(household_id: int | None):
+    """Condition for runs that covered a household's tickers: scheduled runs, plus its own refreshes.
+    With None, scheduled runs only."""
+    if household_id is None:
+        return PriceRefreshRun.household_id.is_(None)
+    return or_(PriceRefreshRun.household_id.is_(None), PriceRefreshRun.household_id == household_id)
+
+
+def last_successful_run(db: Session, household_id: int | None = None) -> PriceRefreshRun | None:
     return db.scalar(
         select(PriceRefreshRun)
-        .where(PriceRefreshRun.status.in_(["success", "partial"]))
+        .where(PriceRefreshRun.status.in_(["success", "partial"]), runs_for(household_id))
         .order_by(PriceRefreshRun.started_at.desc())
         .limit(1)
     )

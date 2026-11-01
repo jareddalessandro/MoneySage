@@ -24,6 +24,8 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-moneysage}:${POSTGRES_PASSWORD:-moneysage}@db:5432/${POSTGRES_DB:-moneysage}
+      AUTH_MODE: ${AUTH_MODE:-none}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
       PRICE_REFRESH_HOUR: ${PRICE_REFRESH_HOUR:-17}
       PRICE_REFRESH_MINUTE: ${PRICE_REFRESH_MINUTE:-30}
       PRICE_REFRESH_TZ: ${PRICE_REFRESH_TZ:-America/New_York}

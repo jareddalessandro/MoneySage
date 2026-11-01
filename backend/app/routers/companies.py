@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import (
+    AccessRole,
     Company,
+    CompanyAccess,
     CompanyEntry,
     CompanyEntryKind,
     CompanyMember,
@@ -47,18 +49,12 @@ from app.services.company_statements import (
     render_pdf,
     render_xlsx,
 )
+from app.tenancy import CompanyDep, UserDep, require_owner
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
 YEAR = Query(default=None, ge=1900, le=2200, description="Defaults to the current year")
 ZERO = Decimal(0)
-
-
-def get_company(db: Session, company_id: int) -> Company:
-    company = db.get(Company, company_id)
-    if company is None:
-        raise HTTPException(404, "Company not found")
-    return company
 
 
 def get_member(db: Session, company_id: int, member_id: int) -> CompanyMember:
@@ -124,12 +120,37 @@ def _all_time_total(db: Session, company_id: int, kind: CompanyEntryKind) -> Dec
 
 # ---------- Companies ----------
 
+def _company_out(company: Company, role: AccessRole) -> CompanyOut:
+    return CompanyOut.model_validate(company).model_copy(update={"role": role})
+
+
+def _check_name(db: Session, user_id: int, name: str, company_id: int | None = None) -> None:
+    """Company names are unique among the companies a person can open (different people may each have an
+    "Acme LLC")."""
+    query = (
+        select(Company.id)
+        .join(CompanyAccess, CompanyAccess.company_id == Company.id)
+        .where(CompanyAccess.user_id == user_id, func.lower(Company.name) == name.strip().lower())
+    )
+    if company_id is not None:
+        query = query.where(Company.id != company_id)
+    if db.scalar(query.limit(1)) is not None:
+        raise HTTPException(409, f"A company named '{name}' already exists")
+
+
 @router.get("", response_model=list[CompanyListItem])
-def list_companies(year: int | None = YEAR, db: Session = Depends(get_db)):
+def list_companies(user: UserDep, year: int | None = YEAR, db: Session = Depends(get_db)):
+    """The companies you can open."""
     year = year or date.today().year
     items = []
     start, end = _year_bounds(year)
-    for company in db.scalars(select(Company).order_by(Company.name)).all():
+    rows = db.execute(
+        select(Company, CompanyAccess.role)
+        .join(CompanyAccess, CompanyAccess.company_id == Company.id)
+        .where(CompanyAccess.user_id == user.id)
+        .order_by(Company.name, Company.id)
+    ).all()
+    for company, role in rows:
         totals = _totals_by_kind(db, company.id, year)
         income = totals.get(CompanyEntryKind.income, ZERO)
         repaid = revenue_shares.repayments(db, company.id)
@@ -142,6 +163,7 @@ def list_companies(year: int | None = YEAR, db: Session = Depends(get_db)):
             id=company.id,
             name=company.name,
             description=company.description,
+            role=role,
             members=company.members,
             year=year,
             income=income,
@@ -154,30 +176,38 @@ def list_companies(year: int | None = YEAR, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=CompanyOut, status_code=201)
-def create_company(body: CompanyIn, db: Session = Depends(get_db)):
-    company = Company(**body.model_dump())
+def create_company(body: CompanyIn, user: UserDep, db: Session = Depends(get_db)):
+    """A new company, owned by you. It's visible only to you until you share it."""
+    _check_name(db, user.id, body.name)
+    company = Company(created_by_id=user.id, **body.model_dump())
     db.add(company)
-    _commit_unique(db, f"A company named '{body.name}' already exists")
-    return company
+    db.flush()
+    db.add(CompanyAccess(company_id=company.id, user_id=user.id, role=AccessRole.owner))
+    db.commit()
+    return _company_out(company, AccessRole.owner)
 
 
 @router.get("/{company_id}", response_model=CompanyOut)
-def read_company(company_id: int, db: Session = Depends(get_db)):
-    return get_company(db, company_id)
+def read_company(company_id: int, ctx: CompanyDep):
+    return _company_out(ctx.company, ctx.role)
 
 
 @router.put("/{company_id}", response_model=CompanyOut)
-def update_company(company_id: int, body: CompanyIn, db: Session = Depends(get_db)):
-    company = get_company(db, company_id)
+def update_company(company_id: int, body: CompanyIn, ctx: CompanyDep):
+    db = ctx.db
+    company = ctx.company
+    _check_name(db, ctx.user.id, body.name, company_id)
     for key, value in body.model_dump().items():
         setattr(company, key, value)
-    _commit_unique(db, f"A company named '{body.name}' already exists")
-    return company
+    db.commit()
+    return _company_out(company, ctx.role)
 
 
 @router.delete("/{company_id}", status_code=204)
-def delete_company(company_id: int, db: Session = Depends(get_db)):
-    company = get_company(db, company_id)
+def delete_company(company_id: int, ctx: CompanyDep):
+    db = ctx.db
+    require_owner(ctx.role, "delete this company")
+    company = ctx.company
     # Entries go first, then revenue shares: they reference members, products and shares, which would
     # otherwise block the company's cascade.
     for entry in db.scalars(select(CompanyEntry).where(CompanyEntry.company_id == company_id)):
@@ -203,8 +233,9 @@ def _check_equity(db: Session, company: Company, body: CompanyMemberIn, member_i
 
 
 @router.post("/{company_id}/members", response_model=CompanyMemberOut, status_code=201)
-def create_member(company_id: int, body: CompanyMemberIn, db: Session = Depends(get_db)):
-    company = get_company(db, company_id)
+def create_member(company_id: int, body: CompanyMemberIn, ctx: CompanyDep):
+    db = ctx.db
+    company = ctx.company
     _check_equity(db, company, body, None)
     member = CompanyMember(company_id=company_id, **body.model_dump())
     db.add(member)
@@ -213,8 +244,9 @@ def create_member(company_id: int, body: CompanyMemberIn, db: Session = Depends(
 
 
 @router.put("/{company_id}/members/{member_id}", response_model=CompanyMemberOut)
-def update_member(company_id: int, member_id: int, body: CompanyMemberIn, db: Session = Depends(get_db)):
-    company = get_company(db, company_id)
+def update_member(company_id: int, member_id: int, body: CompanyMemberIn, ctx: CompanyDep):
+    db = ctx.db
+    company = ctx.company
     member = get_member(db, company_id, member_id)
     _check_equity(db, company, body, member_id)
     for key, value in body.model_dump().items():
@@ -224,7 +256,8 @@ def update_member(company_id: int, member_id: int, body: CompanyMemberIn, db: Se
 
 
 @router.delete("/{company_id}/members/{member_id}", status_code=204)
-def delete_member(company_id: int, member_id: int, db: Session = Depends(get_db)):
+def delete_member(company_id: int, member_id: int, ctx: CompanyDep):
+    db = ctx.db
     member = get_member(db, company_id, member_id)
     if db.scalar(select(func.count()).where(CompanyEntry.member_id == member_id)):
         raise HTTPException(
@@ -237,8 +270,8 @@ def delete_member(company_id: int, member_id: int, db: Session = Depends(get_db)
 # ---------- Products ----------
 
 @router.post("/{company_id}/products", response_model=CompanyProductOut, status_code=201)
-def create_product(company_id: int, body: CompanyProductIn, db: Session = Depends(get_db)):
-    get_company(db, company_id)
+def create_product(company_id: int, body: CompanyProductIn, ctx: CompanyDep):
+    db = ctx.db
     product = CompanyProduct(company_id=company_id, **body.model_dump())
     db.add(product)
     _commit_unique(db, f"There's already a product named '{body.name}'")
@@ -246,7 +279,8 @@ def create_product(company_id: int, body: CompanyProductIn, db: Session = Depend
 
 
 @router.put("/{company_id}/products/{product_id}", response_model=CompanyProductOut)
-def update_product(company_id: int, product_id: int, body: CompanyProductIn, db: Session = Depends(get_db)):
+def update_product(company_id: int, product_id: int, body: CompanyProductIn, ctx: CompanyDep):
+    db = ctx.db
     product = get_product(db, company_id, product_id)
     for key, value in body.model_dump().items():
         setattr(product, key, value)
@@ -255,7 +289,8 @@ def update_product(company_id: int, product_id: int, body: CompanyProductIn, db:
 
 
 @router.delete("/{company_id}/products/{product_id}", status_code=204)
-def delete_product(company_id: int, product_id: int, db: Session = Depends(get_db)):
+def delete_product(company_id: int, product_id: int, ctx: CompanyDep):
+    db = ctx.db
     product = get_product(db, company_id, product_id)
     entries = db.scalar(select(func.count()).where(CompanyEntry.product_id == product_id))
     shares = db.scalar(select(func.count()).where(RevenueShare.product_id == product_id))
@@ -301,8 +336,8 @@ def _apply(db: Session, company_id: int, entry: CompanyEntry, body: CompanyEntry
 
 
 @router.get("/{company_id}/entries", response_model=list[CompanyEntryOut])
-def list_entries(company_id: int, year: int | None = YEAR, db: Session = Depends(get_db)):
-    get_company(db, company_id)
+def list_entries(company_id: int, ctx: CompanyDep, year: int | None = YEAR):
+    db = ctx.db
     start, end = _year_bounds(year or date.today().year)
     entries = db.scalars(
         select(CompanyEntry)
@@ -316,8 +351,8 @@ def list_entries(company_id: int, year: int | None = YEAR, db: Session = Depends
 
 
 @router.post("/{company_id}/entries", response_model=CompanyEntryOut, status_code=201)
-def create_entry(company_id: int, body: CompanyEntryIn, db: Session = Depends(get_db)):
-    get_company(db, company_id)
+def create_entry(company_id: int, body: CompanyEntryIn, ctx: CompanyDep):
+    db = ctx.db
     entry = CompanyEntry(company_id=company_id)
     _apply(db, company_id, entry, body)
     db.add(entry)
@@ -326,7 +361,8 @@ def create_entry(company_id: int, body: CompanyEntryIn, db: Session = Depends(ge
 
 
 @router.put("/{company_id}/entries/{entry_id}", response_model=CompanyEntryOut)
-def update_entry(company_id: int, entry_id: int, body: CompanyEntryIn, db: Session = Depends(get_db)):
+def update_entry(company_id: int, entry_id: int, body: CompanyEntryIn, ctx: CompanyDep):
+    db = ctx.db
     entry = get_entry(db, company_id, entry_id)
     _apply(db, company_id, entry, body)
     db.commit()
@@ -334,7 +370,8 @@ def update_entry(company_id: int, entry_id: int, body: CompanyEntryIn, db: Sessi
 
 
 @router.delete("/{company_id}/entries/{entry_id}", status_code=204)
-def delete_entry(company_id: int, entry_id: int, db: Session = Depends(get_db)):
+def delete_entry(company_id: int, entry_id: int, ctx: CompanyDep):
+    db = ctx.db
     db.delete(get_entry(db, company_id, entry_id))
     db.commit()
 
@@ -342,8 +379,9 @@ def delete_entry(company_id: int, entry_id: int, db: Session = Depends(get_db)):
 # ---------- Summary ----------
 
 @router.get("/{company_id}/summary", response_model=CompanySummary)
-def company_summary(company_id: int, year: int | None = YEAR, db: Session = Depends(get_db)):
-    company = get_company(db, company_id)
+def company_summary(company_id: int, ctx: CompanyDep, year: int | None = YEAR):
+    db = ctx.db
+    company = ctx.company
     year = year or date.today().year
     start, end = _year_bounds(year)
     in_year = (CompanyEntry.company_id == company_id, CompanyEntry.date >= start, CompanyEntry.date < end)
@@ -481,8 +519,8 @@ def _apply_share(db: Session, company_id: int, share: RevenueShare, body: Revenu
 
 
 @router.get("/{company_id}/revenue-shares", response_model=list[RevenueShareOut])
-def list_revenue_shares(company_id: int, year: int | None = YEAR, db: Session = Depends(get_db)):
-    get_company(db, company_id)
+def list_revenue_shares(company_id: int, ctx: CompanyDep, year: int | None = YEAR):
+    db = ctx.db
     year = year or date.today().year
     shares = db.scalars(
         select(RevenueShare).where(RevenueShare.company_id == company_id).order_by(RevenueShare.payee, RevenueShare.id)
@@ -491,8 +529,8 @@ def list_revenue_shares(company_id: int, year: int | None = YEAR, db: Session = 
 
 
 @router.post("/{company_id}/revenue-shares", response_model=RevenueShareOut, status_code=201)
-def create_revenue_share(company_id: int, body: RevenueShareIn, db: Session = Depends(get_db)):
-    get_company(db, company_id)
+def create_revenue_share(company_id: int, body: RevenueShareIn, ctx: CompanyDep):
+    db = ctx.db
     share = RevenueShare(company_id=company_id)
     _apply_share(db, company_id, share, body)
     db.add(share)
@@ -501,7 +539,8 @@ def create_revenue_share(company_id: int, body: RevenueShareIn, db: Session = De
 
 
 @router.put("/{company_id}/revenue-shares/{share_id}", response_model=RevenueShareOut)
-def update_revenue_share(company_id: int, share_id: int, body: RevenueShareIn, db: Session = Depends(get_db)):
+def update_revenue_share(company_id: int, share_id: int, body: RevenueShareIn, ctx: CompanyDep):
+    db = ctx.db
     share = get_share(db, company_id, share_id)
     _apply_share(db, company_id, share, body)
     db.commit()
@@ -509,7 +548,8 @@ def update_revenue_share(company_id: int, share_id: int, body: RevenueShareIn, d
 
 
 @router.delete("/{company_id}/revenue-shares/{share_id}", status_code=204)
-def delete_revenue_share(company_id: int, share_id: int, db: Session = Depends(get_db)):
+def delete_revenue_share(company_id: int, share_id: int, ctx: CompanyDep):
+    db = ctx.db
     share = get_share(db, company_id, share_id)
     if db.scalar(select(func.count()).where(CompanyEntry.revenue_share_id == share_id)):
         raise HTTPException(409, f"Payments to or funding from {share.payee} are recorded. Delete those entries first.")
@@ -518,8 +558,9 @@ def delete_revenue_share(company_id: int, share_id: int, db: Session = Depends(g
 
 
 @router.get("/{company_id}/revenue-shares/{share_id}/months", response_model=list[RevenueShareMonthOut])
-def revenue_share_months(company_id: int, share_id: int, year: int | None = YEAR, db: Session = Depends(get_db)):
+def revenue_share_months(company_id: int, share_id: int, ctx: CompanyDep, year: int | None = YEAR):
     """Each month of the year since the agreement started, through the current month."""
+    db = ctx.db
     share = get_share(db, company_id, share_id)
     year = year or date.today().year
     today = date.today()
@@ -535,9 +576,10 @@ def revenue_share_months(company_id: int, share_id: int, year: int | None = YEAR
 
 @router.put("/{company_id}/revenue-shares/{share_id}/months", status_code=204)
 def set_revenue_share_months(
-    company_id: int, share_id: int, body: RevenueShareMonthsUpdate, db: Session = Depends(get_db)
+    company_id: int, share_id: int, body: RevenueShareMonthsUpdate, ctx: CompanyDep
 ):
     """Reported basis only: set (or, with a null revenue, clear) the revenue for each listed month."""
+    db = ctx.db
     share = get_share(db, company_id, share_id)
     if share.basis != RevenueShareBasis.reported:
         raise HTTPException(400, f"{share.payee}'s share is calculated from recorded income")
@@ -577,13 +619,14 @@ def _download(content: bytes, name: str, format: str) -> Response:
 def export_payee_statement(
     company_id: int,
     share_id: int,
+    ctx: CompanyDep,
     month: str = Query(pattern=r"^\d{4}-\d{2}$", description="YYYY-MM"),
     format: Literal["pdf", "xlsx"] = "pdf",
-    db: Session = Depends(get_db),
 ):
     """A monthly statement to send the payee: the month's revenue and share, payments, the balance due,
     and the year to date by month."""
-    company = get_company(db, company_id)
+    db = ctx.db
+    company = ctx.company
     share = get_share(db, company_id, share_id)
     try:
         st = revenue_shares.build_payee_statement(db, company, share, parse_month(month))
@@ -599,15 +642,15 @@ def export_payee_statement(
 @router.get("/{company_id}/statements")
 def export_statements(
     company_id: int,
+    ctx: CompanyDep,
     year: int | None = YEAR,
     format: Literal["pdf", "xlsx"] = "pdf",
-    db: Session = Depends(get_db),
 ):
     """Income statement, members' capital, cash summary and transaction detail for one year, as a download.
 
     For the current year it covers January 1 through today and is labeled year to date.
     """
-    company = get_company(db, company_id)
-    st = build_statements(db, company, year or date.today().year)
+    company = ctx.company
+    st = build_statements(ctx.db, company, year or date.today().year)
     content = render_pdf(st) if format == "pdf" else render_xlsx(st)
     return _download(content, file_name(st, format), format)

@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 
@@ -16,8 +17,13 @@ def format_month(d: date) -> str:
     return f"{d.year:04d}-{d.month:02d}"
 
 
-def current_month() -> date:
-    return date.today().replace(day=1)
+def today_in(timezone: str) -> date:
+    """Today's date in an IANA timezone (a household's)."""
+    return datetime.now(ZoneInfo(timezone)).date()
+
+
+def current_month(today: date | None = None) -> date:
+    return (today or date.today()).replace(day=1)
 
 
 def add_months(d: date, n: int) -> date:

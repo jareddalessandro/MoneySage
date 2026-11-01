@@ -5,14 +5,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from app.config import settings
-from app.database import SessionLocal
+from app.database import system_session
 from app.services.prices import is_stale, refresh_all
 
 log = logging.getLogger(__name__)
 
 
 def _refresh_job() -> None:
-    with SessionLocal() as db:
+    with system_session() as db:
         try:
             refresh_all(db)
         except Exception:
@@ -35,7 +35,7 @@ def start_scheduler() -> BackgroundScheduler:
         coalesce=True,
     )
     # Catch up if the computer was off at the scheduled time.
-    with SessionLocal() as db:
+    with system_session() as db:
         if is_stale(db):
             log.info("Prices are stale; refreshing on startup")
             scheduler.add_job(_refresh_job, id="startup_price_refresh", next_run_time=datetime.now())

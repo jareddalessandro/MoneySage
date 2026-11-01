@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
 from app.models import (
+    AccessRole,
     AccountKind,
     AssetType,
     CategoryColor,
@@ -530,6 +531,8 @@ class CompanyOut(ORMModel):
     description: str | None
     members: list[CompanyMemberOut]
     products: list[CompanyProductOut]
+    # Your access to it.
+    role: AccessRole | None = None
 
 
 class CompanyEntryIn(BaseModel):
@@ -622,6 +625,7 @@ class CompanyListItem(BaseModel):
     id: int
     name: str
     description: str | None
+    role: AccessRole
     members: list[CompanyMemberOut]
     year: int
     income: Num
@@ -712,3 +716,34 @@ class RevenueShareMonthIn(BaseModel):
 
 class RevenueShareMonthsUpdate(BaseModel):
     months: list[RevenueShareMonthIn] = Field(max_length=120)
+
+
+# ---------- The signed-in user ----------
+
+class UserOut(ORMModel):
+    id: int
+    email: str
+    name: str | None
+    picture_url: str | None
+    is_local: bool
+
+
+class HouseholdAccessOut(BaseModel):
+    id: int
+    name: str
+    timezone: str
+    role: AccessRole
+
+
+class CompanyAccessOut(BaseModel):
+    id: int
+    name: str
+    role: AccessRole
+
+
+class MeOut(BaseModel):
+    auth_mode: Literal["none", "google"]
+    user: UserOut
+    # Their own household first, then ones shared with them.
+    households: list[HouseholdAccessOut]
+    companies: list[CompanyAccessOut]

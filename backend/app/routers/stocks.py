@@ -1,10 +1,9 @@
 from decimal import ROUND_HALF_UP, Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.models import CASH_TICKER, Account, AssetType, Holding, PriceRefreshRun
 from app.routers.balance_sheet import get_account
 from app.schemas import (
@@ -21,7 +20,8 @@ from app.services.portfolio import (
     sync_account_snapshots,
     value_holding,
 )
-from app.services.prices import PriceFetchError, last_successful_run, load_ticker, refresh_all
+from app.services.prices import PriceFetchError, last_successful_run, load_ticker, refresh_all, runs_for
+from app.tenancy import HouseholdCtx, HouseholdDep
 
 router = APIRouter(prefix="/api", tags=["stocks"])
 
@@ -34,18 +34,24 @@ def normalize_ticker(ticker: str, asset_type: AssetType) -> str:
     return ticker
 
 
-def get_holding(db: Session, holding_id: int) -> Holding:
-    holding = db.get(Holding, holding_id)
-    if holding is None:
+def get_holding(ctx: HouseholdCtx, holding_id: int) -> Holding:
+    holding = ctx.db.get(Holding, holding_id)
+    if holding is None or holding.household_id != ctx.household_id:
         raise HTTPException(404, "Holding not found")
     return holding
 
 
 def find_position(
-    db: Session, asset_type: AssetType, ticker: str, account_id: int | None, exclude_id: int | None = None
+    db: Session,
+    household_id: int,
+    asset_type: AssetType,
+    ticker: str,
+    account_id: int | None,
+    exclude_id: int | None = None,
 ) -> Holding | None:
     """The holding of this ticker in this account, if there is one (there's at most one per account)."""
     query = select(Holding).where(
+        Holding.household_id == household_id,
         Holding.asset_type == asset_type,
         Holding.ticker == ticker,
         Holding.account_id.is_(None) if account_id is None else Holding.account_id == account_id,
@@ -74,9 +80,9 @@ def buy_more(holding: Holding, quantity: Decimal, price: Decimal | None) -> None
     holding.quantity += quantity
 
 
-def _apply(db: Session, holding: Holding, body: HoldingIn) -> None:
+def _apply(ctx: HouseholdCtx, holding: Holding, body: HoldingIn) -> None:
     if body.account_id is not None:
-        get_account(db, body.account_id)
+        get_account(ctx, body.account_id)
     data = body.model_dump()
     if body.asset_type == AssetType.cash:
         # Quantity is the dollar amount; there's no ticker to look up and no gain to track.
@@ -86,7 +92,7 @@ def _apply(db: Session, holding: Holding, body: HoldingIn) -> None:
         return
     data["ticker"] = normalize_ticker(body.ticker, body.asset_type)
     try:
-        found = load_ticker(db, data["ticker"])
+        found = load_ticker(ctx.db, data["ticker"])
     except PriceFetchError as exc:
         raise HTTPException(502, f"Couldn't reach the price service: {exc}")
     if not found:
@@ -96,9 +102,12 @@ def _apply(db: Session, holding: Holding, body: HoldingIn) -> None:
         setattr(holding, key, value)
 
 
-def _holdings_out(db: Session, holdings: list[Holding]) -> list[HoldingOut]:
+def _holdings_out(ctx: HouseholdCtx, holdings: list[Holding]) -> list[HoldingOut]:
+    db = ctx.db
     prices = latest_prices(db, {h.ticker for h in holdings})
-    account_names = dict(db.execute(select(Account.id, Account.name)).all())
+    account_names = dict(
+        db.execute(select(Account.id, Account.name).where(Account.household_id == ctx.household_id)).all()
+    )
     result = []
     for h in holdings:
         v = value_holding(h, prices.get(h.ticker))
@@ -124,18 +133,39 @@ def _holdings_out(db: Session, holdings: list[Holding]) -> list[HoldingOut]:
     return result
 
 
+def _household_holdings(ctx: HouseholdCtx) -> list[Holding]:
+    return list(
+        ctx.db.scalars(
+            select(Holding).where(Holding.household_id == ctx.household_id).order_by(Holding.ticker, Holding.id)
+        ).all()
+    )
+
+
+def _run_out(ctx: HouseholdCtx, run: PriceRefreshRun | None) -> RefreshRunOut | None:
+    """A refresh run as this household sees it. A scheduled run covered everyone's tickers, so its
+    failures are narrowed to the ones this household holds."""
+    if run is None:
+        return None
+    out = RefreshRunOut.model_validate(run)
+    if run.household_id is None:
+        held = {h.ticker for h in _household_holdings(ctx)}
+        failed = [t for t in run.failed_tickers or [] if t in held]
+        out = out.model_copy(update={"message": f"No data for: {', '.join(failed)}" if failed else None})
+    return out
+
+
 @router.get("/holdings", response_model=list[HoldingOut])
-def list_holdings(db: Session = Depends(get_db)):
-    holdings = db.scalars(select(Holding).order_by(Holding.ticker, Holding.id)).all()
-    return _holdings_out(db, list(holdings))
+def list_holdings(ctx: HouseholdDep):
+    return _holdings_out(ctx, _household_holdings(ctx))
 
 
 @router.post("/holdings", response_model=HoldingOut, status_code=201)
-def create_holding(body: HoldingIn, db: Session = Depends(get_db)):
+def create_holding(body: HoldingIn, ctx: HouseholdDep):
     """Add a holding. A ticker already held in that account is bought more of instead of listed twice."""
-    holding = Holding()
-    _apply(db, holding, body)
-    existing = find_position(db, holding.asset_type, holding.ticker, holding.account_id)
+    db = ctx.db
+    holding = Holding(household_id=ctx.household_id)
+    _apply(ctx, holding, body)
+    existing = find_position(db, ctx.household_id, holding.asset_type, holding.ticker, holding.account_id)
     if existing is None:
         db.add(holding)
     else:
@@ -143,31 +173,35 @@ def create_holding(body: HoldingIn, db: Session = Depends(get_db)):
         existing.notes = existing.notes or holding.notes
         holding = existing
     db.flush()
-    sync_account_snapshots(db)
+    sync_account_snapshots(db, ctx.household_id)
     db.commit()
-    return _holdings_out(db, [holding])[0]
+    return _holdings_out(ctx, [holding])[0]
 
 
 @router.put("/holdings/{holding_id}", response_model=HoldingOut)
-def update_holding(holding_id: int, body: HoldingIn, db: Session = Depends(get_db)):
-    holding = get_holding(db, holding_id)
-    _apply(db, holding, body)
-    if find_position(db, holding.asset_type, holding.ticker, holding.account_id, exclude_id=holding.id):
+def update_holding(holding_id: int, body: HoldingIn, ctx: HouseholdDep):
+    db = ctx.db
+    holding = get_holding(ctx, holding_id)
+    _apply(ctx, holding, body)
+    if find_position(
+        db, ctx.household_id, holding.asset_type, holding.ticker, holding.account_id, exclude_id=holding.id
+    ):
         what = "cash" if holding.asset_type == AssetType.cash else holding.ticker
         raise HTTPException(
             409, f"There's already a {what} holding in that account. Buy more on that one, or delete one of them."
         )
     db.flush()
-    sync_account_snapshots(db)
+    sync_account_snapshots(db, ctx.household_id)
     db.commit()
-    return _holdings_out(db, [holding])[0]
+    return _holdings_out(ctx, [holding])[0]
 
 
 @router.post("/holdings/{holding_id}/trade", response_model=HoldingOut | None)
-def trade(holding_id: int, body: TradeIn, db: Session = Depends(get_db)):
+def trade(holding_id: int, body: TradeIn, ctx: HouseholdDep):
     """Buy more or sell some. A sale keeps the average cost per share; selling everything removes the
     holding (and returns null)."""
-    holding = get_holding(db, holding_id)
+    db = ctx.db
+    holding = get_holding(ctx, holding_id)
     remaining: Holding | None = holding
     if body.side == "buy":
         buy_more(holding, body.quantity, body.price)
@@ -181,47 +215,57 @@ def trade(holding_id: int, body: TradeIn, db: Session = Depends(get_db)):
     else:
         holding.quantity -= body.quantity
     db.flush()
-    sync_account_snapshots(db)
+    sync_account_snapshots(db, ctx.household_id)
     db.commit()
-    return _holdings_out(db, [remaining])[0] if remaining else None
+    return _holdings_out(ctx, [remaining])[0] if remaining else None
 
 
 @router.delete("/holdings/{holding_id}", status_code=204)
-def delete_holding(holding_id: int, db: Session = Depends(get_db)):
-    db.delete(get_holding(db, holding_id))
+def delete_holding(holding_id: int, ctx: HouseholdDep):
+    db = ctx.db
+    db.delete(get_holding(ctx, holding_id))
     db.flush()
-    sync_account_snapshots(db)
+    sync_account_snapshots(db, ctx.household_id)
     db.commit()
 
 
 @router.get("/portfolio/summary", response_model=PortfolioSummary)
-def portfolio_summary(db: Session = Depends(get_db)):
-    holdings = _holdings_out(db, list(db.scalars(select(Holding)).all()))
+def portfolio_summary(ctx: HouseholdDep):
+    holdings = _holdings_out(ctx, _household_holdings(ctx))
     total_value = sum((h.market_value or Decimal(0) for h in holdings), Decimal(0))
     day_change = sum((h.day_change or Decimal(0) for h in holdings), Decimal(0))
     with_cost = [h for h in holdings if h.cost_basis is not None and h.market_value is not None]
     total_cost = sum((h.cost_basis for h in with_cost), Decimal(0)) if with_cost else None
     total_gain = sum((h.gain for h in with_cost), Decimal(0)) if with_cost else None
-    latest_run = db.scalar(select(PriceRefreshRun).order_by(PriceRefreshRun.started_at.desc()).limit(1))
+    latest_run = ctx.db.scalar(
+        select(PriceRefreshRun)
+        .where(runs_for(ctx.household_id))
+        .order_by(PriceRefreshRun.started_at.desc())
+        .limit(1)
+    )
     return PortfolioSummary(
         total_value=total_value,
         total_cost=total_cost,
         total_gain=total_gain,
         day_change=day_change,
-        last_refresh=latest_run,
+        last_refresh=_run_out(ctx, latest_run),
     )
 
 
 @router.get("/portfolio/history", response_model=list[PortfolioPoint])
-def history(days: int = Query(365, ge=1, le=3650), db: Session = Depends(get_db)):
-    return [PortfolioPoint(date=d, value=v) for d, v in portfolio_history(db, days)]
+def history(ctx: HouseholdDep, days: int = Query(365, ge=1, le=3650)):
+    return [
+        PortfolioPoint(date=d, value=v)
+        for d, v in portfolio_history(ctx.db, ctx.household_id, days, ctx.today())
+    ]
 
 
 @router.post("/prices/refresh", response_model=RefreshRunOut)
-def refresh_prices(db: Session = Depends(get_db)):
-    return refresh_all(db)
+def refresh_prices(ctx: HouseholdDep):
+    """Refresh this household's tickers now."""
+    return _run_out(ctx, refresh_all(ctx.db, ctx.household_id))
 
 
 @router.get("/prices/status", response_model=RefreshRunOut | None)
-def price_status(db: Session = Depends(get_db)):
-    return last_successful_run(db)
+def price_status(ctx: HouseholdDep):
+    return _run_out(ctx, last_successful_run(ctx.db, ctx.household_id))

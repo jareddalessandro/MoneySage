@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import delete
 
-from app.database import SessionLocal
+from app.database import system_session
 from app.models import PriceQuote
 from app.months import current_month, format_month
 from app.services.prices import refresh_all
@@ -66,7 +66,7 @@ def test_history_opens_on_range_start(client, fake_prices):
     assert [p["value"] for p in history][-1] == 109
 
     # No quote on the start date (weekend/holiday): it opens with the last close before it.
-    with SessionLocal() as db:
+    with system_session() as db:
         db.execute(delete(PriceQuote).where(PriceQuote.date.in_([today - timedelta(days=d) for d in (5, 6)])))
         db.commit()
     history = client.get("/api/portfolio/history", params={"days": 5}).json()
@@ -80,12 +80,12 @@ def test_refresh_records_failures(client, fake_prices):
     fake_prices["AAPL"] = [100.0]
     client.post("/api/holdings", json={"ticker": "AAPL", "asset_type": "stock", "quantity": 1})
     fake_prices["AAPL"] = [100.0, 105.0]
-    with SessionLocal() as db:
+    with system_session() as db:
         run = refresh_all(db)
     assert run.status == "success" and run.tickers_updated == 1
 
     del fake_prices["AAPL"]
-    with SessionLocal() as db:
+    with system_session() as db:
         run = refresh_all(db)
     assert run.status == "failed"
     assert "AAPL" in run.message
@@ -125,7 +125,7 @@ def test_cash_in_an_account(client, fake_prices):
     ]
 
     # Refreshing prices skips cash (fetching "CASH" would fail and mark the run failed).
-    with SessionLocal() as db:
+    with system_session() as db:
         run = refresh_all(db)
     assert run.status == "success" and run.tickers_updated == 1
 

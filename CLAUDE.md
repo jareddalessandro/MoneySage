@@ -1,6 +1,6 @@
 # MoneySage
 
-A family finance tracker that runs locally in Docker. Single household, no login.
+A family finance tracker in Docker. It's being prepared for public hosting (Google sign-in, accounts, sharing); see **Tenancy** below. `AUTH_MODE=none` (the default) is still an offline install with no login.
 
 ## Rules
 
@@ -28,7 +28,7 @@ docker compose exec frontend npx tsc --noEmit
 
 **Backend:** FastAPI + SQLAlchemy 2 + Alembic + psycopg 3, Python 3.12, in `backend/app/`.
 
-- **`models.py`:** Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun, CreditCard, Company, CompanyMember, CompanyProduct, CompanyEntry, RevenueShare, RevenueShareMonth, StatementImport, ImportRule, MonthSetting. Enums are stored as VARCHAR (`native_enum=False`).
+- **`models.py`:** User, Household, HouseholdAccess, CompanyAccess, Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun, CreditCard, Company, CompanyMember, CompanyProduct, CompanyEntry, RevenueShare, RevenueShareMonth, StatementImport, ImportRule, MonthSetting. Enums are stored as VARCHAR (`native_enum=False`).
 - **`routers/`:** one router per tab (the Investments tab is `stocks`: route `/investments`, `/stocks` redirects there) (`budget`, `transactions` for the income statement, `statements` for statement import, `balance_sheet`, `stocks`, `categories`, `credit_cards`, `companies`). There's no Dashboard: the user removed it, and `/` redirects to Budget.
 - **`services/`:**
   - `budget.py`: normalizes frequencies to monthly amounts.
@@ -39,7 +39,22 @@ docker compose exec frontend npx tsc --noEmit
   - `company_statements.py`: year-end statements. `documents.py`: the PDF/Excel helpers both use.
   - `statement_parser.py`: reads SoFi statement PDFs (pdfplumber). `statement_import.py`: suggestions, learned rules, saving.
 - **`months.py`:** months are `"YYYY-MM"` in the API and the 1st of the month in the DB.
-- **`seed.py`:** inserts the 27 default categories (incl. Credit Card Payments) when the table is empty.
+- **`seed.py`:** inserts the 27 default categories (incl. Credit Card Payments) into each new household.
+- **`tenancy.py`:** the current user and the household/company a request works in (see Tenancy). **`rls.py`:** the Postgres row-level security policies. **`db_role.py`:** creates the restricted app role at startup.
+
+### Tenancy (households, companies, sharing)
+
+- **Two kinds of container, shared separately:** a household (budget, income statement, balance sheet, investments, credit cards, statement imports and rules, month settings) and a company. Sharing a household never reveals its members' companies, and the reverse. The user's case: share the household with their spouse, and one company only with its co-owner.
+- **Access** is `HouseholdAccess` / `CompanyAccess` rows with a role: `owner` (created it; only one who can share, change access, or delete it), `editor` (can change anything inside, can't share), `viewer` (read-only). `CompanyAccess` is who can open a company in the app; `CompanyMember` is still an equity owner. They're separate concepts.
+- **Every household-scoped table has `household_id`** (children like `balance_snapshots`, `paycheck_deductions` are scoped through their parent). Every query filters by it: routes take `ctx: HouseholdDep` and use `ctx.db` / `ctx.household_id`; `get_account(ctx, id)`-style helpers return 404 for another household's ids, including ids referenced in a body (a category or account id). Company routes under `/api/companies/{company_id}` take `ctx: CompanyDep`. Never use a bare `Depends(get_db)` in a household or company route.
+- **Which household:** the `X-Household-Id` header picks one the user can open; without it, their own (the one they own, else the earliest shared one). Others' households are 404, not 403.
+- **Viewers:** `household_ctx` / `company_ctx` refuse any non-GET/HEAD/OPTIONS request from a viewer with 403, so new write routes are covered automatically. A GET must not write for viewers (the balance sheet skips its current-month sync for them).
+- **Names are unique per household** (categories, accounts, statement keys, import hashes, import rules, credit cards). Company names are unique only among the companies one person can open (checked in the app).
+- **Timezone per household** (`Household.timezone`, default `DEFAULT_TIMEZONE` = container `TZ`): use `ctx.today()` / `ctx.current_month()` in household routes, not `date.today()`. Company routes still use the server date.
+- **Row-level security** (`rls.py`, added by the households migration) is a second wall behind the app's filters. Policies read `app.user_id` and `app.bypass_rls`, set per transaction from `Session.info` (`database.py`). They bind only the restricted role the app uses when `APP_DB_PASSWORD` is set (created at startup by `python -m app.db_role`); the table owner (migrations, an offline install) isn't subject to them. A session with no user sees nothing. Background work (scheduler, startup) uses `system_session()`, which bypasses them. Change policies in a new migration.
+- **`AUTH_MODE`:** `none` = one automatic local user (`User.is_local`, created at startup with a household), with a loud startup warning; `google` = sign-in (in progress; until then every request is 401). The households migration moved existing data into the local user's household and gave them owner access to existing companies.
+- **Price refresh:** the scheduled run covers everyone's tickers (`household_id` null on the run); the Refresh button refreshes only the household's (`refresh_all(db, household_id)`). A scheduled run's failures are shown narrowed to the tickers the household holds (`failed_tickers`), never other people's.
+- **`/api/me`:** the user, their households and companies with roles.
 
 **Frontend:** React 19 + TypeScript + Vite + Mantine 8 + TanStack Query + recharts 3, in `frontend/src/`.
 
@@ -103,14 +118,14 @@ docker compose exec frontend npx tsc --noEmit
   - Allocation = market value ÷ the sum of all listed holdings' market values, so the rows add up to 100%.
 - **Portfolio value chart:** `/api/portfolio/history?days=N` values the *current* holdings over the range. It opens on the range start itself, using the last close on or before it (it looks back 10 days past weekends and holidays). YTD asks for the days since Dec 31, so its base is last year's final close. The header shows the change and % from the first point to the last. If history doesn't reach back that far, it says "since <date>". The % includes cash in the base.
 - **Tickers:** `normalize_ticker` uppercases, and crypto without `-` gets `-USD` (BTC → BTC-USD). New tickers are validated by fetching them, which returns 400 if Yahoo has no data.
-- **Timezone:** the container `TZ` (default America/Phoenix, the user's zone) decides which month "today" is in.
+- **Timezone:** each household's `timezone` decides which month "today" is in (new households get the container `TZ`, default America/Phoenix, the user's zone).
 - **Credit Card Info** (`CreditCard`, `/api/credit-cards`, `pages/CreditCards.tsx`):
   - Reference info per card: name (unique), issuer, payment site, annual fee, the month the fee posts (1-12), benefits (a JSONB list of short lines; the form takes one per line), and notes.
   - **Never add card numbers, CVVs, logins or passwords.** The page tells users not to enter them.
   - `payment_url` is normalized server-side: "chase.com" becomes `https://chase.com`, and non-web schemes (e.g. `javascript:`) are rejected. Links open in a new tab with `rel="noopener noreferrer"`.
   - It isn't linked to Balance Sheet credit card accounts yet.
 - **Companies** (`Company`, `CompanyMember`, `CompanyEntry`, `/api/companies`, `pages/Companies.tsx` + `pages/Company.tsx`):
-  - Businesses the household has a stake in, kept **separate from household finances**: company income and expenses don't touch the Budget, Income Statement or Balance Sheet.
+  - Businesses someone has a stake in, kept **separate from household finances**: company income and expenses don't touch the Budget, Income Statement or Balance Sheet. Each company is shared on its own (`CompanyAccess`); only its owner can delete it.
   - The sidebar lists each company as its own link under Companies (`/companies/:id`). `/companies` is the overview.
   - Members hold `equity_percent` (0-100, `Numeric(7,4)`). A company's members can't total more than 100% (400 on add or edit). Under 100% is allowed, and the page shows the unassigned part.
   - Entries have a `kind`: `income`, `expense`, `contribution`, `distribution` or `funding` (see revenue-share funding below), with positive amounts.
@@ -165,7 +180,8 @@ docker compose exec frontend npx tsc --noEmit
 
 ### Tests
 
-- `backend/tests/` run against the `moneysage_test` DB, which conftest creates and resets.
+- `backend/tests/` run against the `moneysage_test` DB, which conftest creates and resets. The app connects as a restricted role there, so row-level security is exercised; `TEST_WITHOUT_RLS=1` runs as the owner to check the app's own filters alone (run both after tenancy changes).
+- The `people` fixture adds other users (`people.add(email)`), shares (`share_household`, `share_company`) and switches who's asking (`people.act_as(person)`, `None` for the local user). Use `system_session()` to call services directly.
 - The scheduler is disabled (`ENABLE_SCHEDULER=false`) and `fetch_history` is monkeypatched, so there's no network.
 - Add tests alongside backend changes.
 

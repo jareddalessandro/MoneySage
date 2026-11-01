@@ -25,7 +25,7 @@ def monthly_amount(amount: Decimal, frequency: Frequency) -> Decimal:
 
 
 def budget_by_category(
-    db: Session, card_category: Category | None = None
+    db: Session, household_id: int, card_category: Category | None = None
 ) -> dict[int, tuple[str, CategoryKind, CategoryColor, Decimal]]:
     """category_id -> (name, kind, color, monthly budgeted amount).
 
@@ -33,7 +33,7 @@ def budget_by_category(
     how a bank statement sees them (inside one card payment)."""
     totals: dict[int, Decimal] = defaultdict(Decimal)
     info: dict[int, tuple[str, CategoryKind, CategoryColor]] = {}
-    for item in db.scalars(select(BudgetItem)).unique():
+    for item in db.scalars(select(BudgetItem).where(BudgetItem.household_id == household_id)).unique():
         category = card_category if card_category is not None and item.paid_by_card else item.category
         totals[category.id] += monthly_amount(item.amount, item.frequency)
         info[category.id] = (category.name, category.kind, category.color)
