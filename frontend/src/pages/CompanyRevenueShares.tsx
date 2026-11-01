@@ -34,7 +34,7 @@ import dayjs from 'dayjs';
 import { useState } from 'react';
 
 import { api } from '../api';
-import { confirmDelete, EmptyState, SectionCard, useAppMutation } from '../components/common';
+import { confirmDelete, Editable, EmptyState, SectionCard, useAppMutation, useCanEdit } from '../components/common';
 import { money, monthLabel, signedMoney } from '../format';
 import type { Company, CompanySummary, RevenueShare, RevenueShareBasis, RevenueShareInput } from '../types';
 
@@ -61,15 +61,18 @@ export function RevenueShares({
   onStatement: (share: RevenueShare) => void;
 }) {
   const remove = useAppMutation((shareId: number) => api.deleteRevenueShare(company.id, shareId), 'Revenue share deleted');
+  const canEdit = useCanEdit();
 
   return (
     <SectionCard
       title="Revenue or profit shares"
       actions={
         shares.length > 0 && (
-          <Button size="xs" variant="default" leftSection={<IconPlus size={14} />} onClick={onAdd}>
-            Add agreement
-          </Button>
+          <Editable>
+            <Button size="xs" variant="default" leftSection={<IconPlus size={14} />} onClick={onAdd}>
+              Add agreement
+            </Button>
+          </Editable>
         )
       }
     >
@@ -120,7 +123,7 @@ export function RevenueShares({
                           </Text>
                         </Text>
                       )}
-                      {s.missing_months.length > 0 && (
+                      {s.missing_months.length > 0 && canEdit && (
                         <Group gap={4} wrap="nowrap" mt={4}>
                           <IconAlertCircle size={14} color="var(--primary)" aria-hidden />
                           <Anchor component="button" type="button" size="xs" onClick={() => onMonths(s)}>
@@ -142,6 +145,7 @@ export function RevenueShares({
                     </Table.Td>
                     <Table.Td>
                       <Group gap={4} wrap="nowrap" justify="flex-end">
+                        <Editable>
                         <Button
                           size="xs"
                           variant="default"
@@ -160,6 +164,7 @@ export function RevenueShares({
                         >
                           <IconCash size={16} />
                         </ActionIcon>
+                        </Editable>
                         <Menu position="bottom-end">
                           <Menu.Target>
                             <ActionIcon variant="subtle" color="gray" aria-label={`More for ${s.payee}`}>
@@ -168,24 +173,28 @@ export function RevenueShares({
                           </Menu.Target>
                           <Menu.Dropdown>
                             <Menu.Item leftSection={<IconTable size={14} />} onClick={() => onMonths(s)}>
-                              {s.basis === 'reported' ? 'Enter monthly revenue' : 'Monthly detail'}
+                              {s.basis === 'reported' && canEdit ? 'Enter monthly revenue' : 'Monthly detail'}
                             </Menu.Item>
-                            <Menu.Item leftSection={<IconBuildingBank size={14} />} onClick={() => onFund(s)}>
-                              Record funding from {s.payee}
-                            </Menu.Item>
+                            <Editable>
+                              <Menu.Item leftSection={<IconBuildingBank size={14} />} onClick={() => onFund(s)}>
+                                Record funding from {s.payee}
+                              </Menu.Item>
+                            </Editable>
                             <Menu.Item leftSection={<IconFileTypePdf size={14} />} onClick={() => onStatement(s)}>
                               Monthly statement for {s.payee}
                             </Menu.Item>
-                            <Menu.Item leftSection={<IconPencil size={14} />} onClick={() => onEdit(s)}>
-                              Edit agreement
-                            </Menu.Item>
-                            <Menu.Item
-                              color="red"
-                              leftSection={<IconTrash size={14} />}
-                              onClick={() => confirmDelete(`${s.payee}'s revenue share`, () => remove.mutate(s.id))}
-                            >
-                              Delete
-                            </Menu.Item>
+                            <Editable>
+                              <Menu.Item leftSection={<IconPencil size={14} />} onClick={() => onEdit(s)}>
+                                Edit agreement
+                              </Menu.Item>
+                              <Menu.Item
+                                color="red"
+                                leftSection={<IconTrash size={14} />}
+                                onClick={() => confirmDelete(`${s.payee}'s revenue share`, () => remove.mutate(s.id))}
+                              >
+                                Delete
+                              </Menu.Item>
+                            </Editable>
                           </Menu.Dropdown>
                         </Menu>
                       </Group>
@@ -357,6 +366,9 @@ export function ShareMonths({
   onDone: () => void;
 }) {
   const reported = share.basis === 'reported';
+  // Viewers see reported revenue as figures, not inputs.
+  const canEdit = useCanEdit();
+  const editable = reported && canEdit;
   const startYear = dayjs(share.start_date).year();
   const [shownYear, setShownYear] = useState(Math.max(year, startYear));
   const { data: months = [], isLoading } = useQuery({
@@ -414,7 +426,7 @@ export function ShareMonths({
                 <Table.Tr key={m.month}>
                   <Table.Td>{dayjs(`${m.month}-01`).format('MMMM')}</Table.Td>
                   <Table.Td ta="right" className="num">
-                    {reported ? (
+                    {editable ? (
                       <NumberInput
                         aria-label={`Revenue for ${monthLabel(m.month)}`}
                         size="xs"
@@ -459,7 +471,7 @@ export function ShareMonths({
         </Table.ScrollContainer>
       )}
       <Group justify="flex-end">
-        {reported ? (
+        {editable ? (
           <>
             <Button variant="default" onClick={onDone}>
               Cancel

@@ -48,6 +48,7 @@ import { zeroAxis } from '../chartAxis';
 import { CATEGORY_COLORS } from '../components/CategoryColor';
 import {
   confirmDelete,
+  Editable,
   EmptyState,
   FilterControl,
   PageHeader,
@@ -56,6 +57,7 @@ import {
   SortableTh,
   StatCard,
   useAppMutation,
+  useCanEdit,
   type SortDir,
 } from '../components/common';
 import { ExpenseDonut } from '../components/ExpenseDonut';
@@ -188,6 +190,7 @@ export default function CompanyPage() {
   const [productFilter, setProductFilter] = useState<ProductFilter>('all');
   const [entrySort, setEntrySort] = useState<SortDir>(loadEntrySort);
   const me = useMe();
+  const canEdit = useCanEdit();
   const exportCompany = () =>
     api.downloadCompanyExport(id).catch((error: Error) =>
       notifications.show({ title: 'Something went wrong', message: error.message, color: 'red' }),
@@ -275,7 +278,8 @@ export default function CompanyPage() {
             (filter === 'income' ? '+' : filter === 'expense' ? '−' : '') + money(cents(visible.reduce((s, e) => s + counted(e), 0))),
         };
   const categorySlices = expensesByCategory(entries);
-  const showExtras = shares.length === 0 || !hasProducts;
+  // Only ways to add things, so viewers don't get it.
+  const showExtras = canEdit && (shares.length === 0 || !hasProducts);
   const hasFunding = shares.some((s) => s.funding_received > 0) || entries.some((e) => e.kind === 'funding');
   const hasActivity = summary?.months.some((m) => m.income || m.expenses);
   const expensesFooter =
@@ -363,6 +367,7 @@ export default function CompanyPage() {
                 </Text>
               </Menu.Dropdown>
             </Menu>
+            <Editable>
             <Button leftSection={<IconPlus size={16} />} onClick={() => setEditingEntry({ entry: null, kind: 'expense' })}>
               Add entry
             </Button>
@@ -391,6 +396,7 @@ export default function CompanyPage() {
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
+            </Editable>
           </>
         }
       />
@@ -671,9 +677,11 @@ export default function CompanyPage() {
             <SectionCard
               title="Owners"
               actions={
-                <Button size="xs" variant="default" leftSection={<IconUserPlus size={14} />} onClick={() => setEditingMember({ member: null })}>
-                  Add member
-                </Button>
+                <Editable>
+                  <Button size="xs" variant="default" leftSection={<IconUserPlus size={14} />} onClick={() => setEditingMember({ member: null })}>
+                    Add member
+                  </Button>
+                </Editable>
               }
             >
               {summary && (

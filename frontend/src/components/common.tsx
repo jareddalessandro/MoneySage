@@ -28,7 +28,7 @@ import {
   IconSelector,
 } from '@tabler/icons-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 
 import { shiftMonth, signedMoney } from '../format';
 
@@ -227,6 +227,20 @@ export function FilterControl({
   );
 }
 
+// ---------- View-only access ----------
+
+/** False when the household or company on screen is shared with you as view only (App provides it). */
+export const CanEditContext = createContext(true);
+
+export function useCanEdit() {
+  return useContext(CanEditContext);
+}
+
+/** Renders its children only for people who can change what's on screen (hides edit controls from viewers). */
+export function Editable({ children, fallback = null }: { children: ReactNode; fallback?: ReactNode }) {
+  return <>{useCanEdit() ? children : fallback}</>;
+}
+
 export interface RowAction {
   label: string;
   icon: ReactNode;
@@ -243,6 +257,8 @@ export interface RowAction {
  */
 export function RowActions({ label, actions }: { label: string; actions: RowAction[] }) {
   const phone = useMediaQuery('(max-width: 36em)');
+  // Row actions all change something, which viewers can't.
+  if (!useCanEdit()) return null;
   if (phone) {
     return (
       <Group justify="flex-end" wrap="nowrap">
@@ -291,6 +307,8 @@ export function RowActions({ label, actions }: { label: string; actions: RowActi
 }
 
 export function EmptyState({ message, action }: { message: string; action?: ReactNode }) {
+  // The action is always a way to add something, which viewers can't.
+  if (!useCanEdit()) action = undefined;
   return (
     <Stack align="center" py="xl" gap="sm">
       <Text c="dimmed" size="sm" ta="center">

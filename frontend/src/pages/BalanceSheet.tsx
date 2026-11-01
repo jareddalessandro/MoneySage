@@ -40,12 +40,14 @@ import { fittedAxis } from '../chartAxis';
 import {
   confirmDelete,
   Delta,
+  Editable,
   EmptyState,
   MonthSwitcher,
   PageHeader,
   SectionCard,
   StatCard,
   useAppMutation,
+  useCanEdit,
 } from '../components/common';
 import {
   ASSET_SUBTYPES,
@@ -97,6 +99,7 @@ export default function BalanceSheetPage() {
   const [month, setMonth] = useState(thisMonth);
   const [editing, setEditing] = useState<Editing>(null);
   const [draft, setDraft] = useState<Draft>({});
+  const canEdit = useCanEdit();
   const [trendView, setTrendView] = useState<'net' | 'split'>('net');
 
   const { data: sheet } = useQuery({ queryKey: ['balance-sheet', month], queryFn: () => api.balanceSheet(month) });
@@ -195,7 +198,7 @@ export default function BalanceSheetPage() {
           )}
         </Table.Td>
         <Table.Td ta="right">
-          {isSynced(r) ? (
+          {isSynced(r) || !canEdit ? (
             <Text size="sm" className="num" fw={500}>
               {money(r.balance)}
             </Text>
@@ -226,6 +229,7 @@ export default function BalanceSheetPage() {
           </Group>
         </Table.Td>
         <Table.Td>
+          <Editable>
           <Menu position="bottom-end">
             <Menu.Target>
               <ActionIcon variant="subtle" color="gray" aria-label="Account actions">
@@ -257,6 +261,7 @@ export default function BalanceSheetPage() {
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
+          </Editable>
         </Table.Td>
       </Table.Tr>
     );
@@ -322,9 +327,11 @@ export default function BalanceSheetPage() {
         actions={
           <>
             <MonthSwitcher value={month} onChange={setMonth} />
-            <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing({ account: null })}>
-              Add account
-            </Button>
+            <Editable>
+              <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing({ account: null })}>
+                Add account
+              </Button>
+            </Editable>
           </>
         }
       />
@@ -378,7 +385,7 @@ export default function BalanceSheetPage() {
         <SectionCard
           title={`Balances · ${monthLabel(month)}`}
           actions={
-            rows.length > 0 && (
+            rows.length > 0 && canEdit && (
               <>
                 {unentered.size > 0 && (
                   <Group gap={4} wrap="nowrap" mr="xs">

@@ -30,6 +30,7 @@ import { CategoryBadge } from '../components/CategoryColor';
 import CategorySelect from '../components/CategorySelect';
 import {
   confirmDelete,
+  Editable,
   EmptyState,
   PageHeader,
   RowActions,
@@ -245,14 +246,14 @@ export default function BudgetPage() {
         title="Budget"
         description="What you expect to earn and spend. Everything is converted to a monthly amount."
         actions={
-          <>
+          <Editable>
             <Button variant="light" leftSection={<IconPlus size={16} />} onClick={() => setEditing({ kind: 'income', item: null })}>
               Add income
             </Button>
             <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing({ kind: 'expense', item: null })}>
               Add expense
             </Button>
-          </>
+          </Editable>
         }
       />
 
@@ -287,14 +288,16 @@ export default function BudgetPage() {
               title="Expected income"
               actions={
                 income.length > 0 && (
-                  <Button
-                    size="xs"
-                    variant="light"
-                    leftSection={<IconPlus size={14} />}
-                    onClick={() => setEditing({ kind: 'income', item: null, paycheck: true })}
-                  >
-                    Add paycheck
-                  </Button>
+                  <Editable>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      leftSection={<IconPlus size={14} />}
+                      onClick={() => setEditing({ kind: 'income', item: null, paycheck: true })}
+                    >
+                      Add paycheck
+                    </Button>
+                  </Editable>
                 )
               }
             >

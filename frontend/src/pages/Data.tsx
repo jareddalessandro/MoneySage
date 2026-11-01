@@ -4,8 +4,9 @@ import { IconDownload, IconFileUpload, IconX } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { api } from '../api';
+import { api, currentHouseholdId } from '../api';
 import { PageHeader, SectionCard, useAppMutation } from '../components/common';
+import { useMe } from '../components/Sharing';
 import type { ImportResult } from '../types';
 
 function plural(n: number, word: string) {
@@ -72,6 +73,9 @@ function ImportCard() {
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
   const importFile = useAppMutation((f: File) => api.importExport(f));
+  const me = useMe();
+  const household = me?.households.find((h) => h.id === currentHouseholdId()) ?? me?.households[0];
+  const ownHousehold = !household || household.role === 'owner';
 
   const run = () => {
     if (!file) return;
@@ -93,7 +97,11 @@ function ImportCard() {
           <List.Item>Each company is added as a new company you own.</List.Item>
           <List.Item>If anything in the file can't be imported, nothing is.</List.Item>
         </List>
-        {file ? (
+        {!ownHousehold ? (
+          <Text size="sm" c="dimmed">
+            Imports go into a household you own. Switch to your own household in the sidebar to import.
+          </Text>
+        ) : file ? (
           <Group gap="sm" wrap="wrap">
             <Button leftSection={<IconFileUpload size={16} />} onClick={run} loading={importFile.isPending}>
               Import {file.name}

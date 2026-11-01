@@ -4,6 +4,7 @@ import { IconCheck } from '@tabler/icons-react';
 import { type ReactNode, useState } from 'react';
 
 import type { CategoryColor } from '../types';
+import { useCanEdit } from './common';
 
 /**
  * Category palette, in the validated order (adjacent hues stay distinct, incl. for color
@@ -41,6 +42,13 @@ export function CategoryColorPicker({ value, onChange }: { value: CategoryColor;
   const [opened, setOpened] = useState(false);
   const phone = useMediaQuery('(max-width: 36em)'); // 44px-ish swatches to tap on phones
   const current = CATEGORY_COLORS.find((c) => c.key === value);
+  if (!useCanEdit()) {
+    return (
+      <Box p={4} style={{ display: 'flex' }}>
+        <CategoryDot color={value} size={12} />
+      </Box>
+    );
+  }
   return (
     <Popover opened={opened} onChange={setOpened} position="bottom-start" withArrow>
       <Popover.Target>

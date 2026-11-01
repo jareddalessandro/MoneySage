@@ -18,6 +18,7 @@ import { Fragment, useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 import { api, ApiError, currentHouseholdId, setHouseholdId, SIGNED_OUT_EVENT } from './api';
+import { CanEditContext } from './components/common';
 import { householdLabel, PendingInvites } from './components/Sharing';
 import type { Me } from './types';
 
@@ -163,10 +164,11 @@ function Shell({ me }: { me: Me | undefined }) {
         {accounts && pathname !== '/sharing' && <PendingInvites />}
         {viewOnly && (
           <Alert variant="light" color="gray" icon={<IconEye size={18} />} mb="xl">
-            You have view-only access {companyId ? 'to this company' : `to ${household ? householdLabel(household) : 'this household'}`}, so
-            changes won't be saved.
+            You have view-only access {companyId ? 'to this company' : `to ${household ? householdLabel(household) : 'this household'}`}:
+            you can look around, but not change anything.
           </Alert>
         )}
+        <CanEditContext.Provider value={!viewOnly}>
         <Routes>
           <Route path="/" element={<Navigate to="/budget" replace />} />
           <Route path="/budget" element={<BudgetPage />} />
@@ -183,6 +185,7 @@ function Shell({ me }: { me: Me | undefined }) {
           <Route path="/sharing" element={<SharingPage />} />
           <Route path="*" element={<Navigate to="/budget" replace />} />
         </Routes>
+        </CanEditContext.Provider>
       </AppShell.Main>
     </AppShell>
   );

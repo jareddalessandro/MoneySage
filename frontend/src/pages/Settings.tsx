@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 import { api } from '../api';
 import { CategoryColorPicker } from '../components/CategoryColor';
-import { confirmDelete, PageHeader, RowActions, SectionCard, useAppMutation } from '../components/common';
+import { confirmDelete, Editable, PageHeader, RowActions, SectionCard, useAppMutation } from '../components/common';
 import type { Category, CategoryColor, CategoryKind } from '../types';
 
 export default function SettingsPage() {
@@ -49,6 +49,7 @@ function CategoryList({ kind, categories }: { kind: CategoryKind; categories: Ca
 
   return (
     <SectionCard title={kind === 'income' ? 'Income categories' : 'Expense categories'}>
+      <Editable>
       <Group gap="xs" mb="sm" wrap="nowrap">
         <TextInput
           placeholder="New category name"
@@ -61,6 +62,7 @@ function CategoryList({ kind, categories }: { kind: CategoryKind; categories: Ca
           Add
         </Button>
       </Group>
+      </Editable>
       <Stack gap={0}>
         {categories.map((c) => (
           <CategoryRow key={c.id} category={c} />
