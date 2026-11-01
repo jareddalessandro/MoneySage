@@ -4,7 +4,7 @@ from decimal import Decimal as D
 
 from openpyxl import load_workbook
 
-from app.database import SessionLocal
+from app.database import system_session
 from app.models import Company, RevenueShare
 from app.services import revenue_shares
 from app.services.company_statements import build_statements
@@ -84,7 +84,7 @@ def test_income_basis(client):
     assert (feb["revenue"], feb["earned"], feb["paid"], feb["balance"]) == (2000.55, 200.06, 85, 200.06)  # rounds half up
     assert (mar["earned"], mar["balance"]) == (0, 200.06)
 
-    with SessionLocal() as db:
+    with system_session() as db:
         t = revenue_shares.totals(db, db.get(RevenueShare, investor["id"]), 2025, today=date(2026, 1, 5))
     assert (t.earned_year, t.paid_year, t.balance_due) == (D("285.06"), 85, D("200.06"))
 
@@ -148,7 +148,7 @@ def test_validation_and_deletes(client):
 
 def test_statements_include_cost_of_revenue_products_and_shares(client):
     cid, *_ = setup(client)
-    with SessionLocal() as db:
+    with system_session() as db:
         st = build_statements(db, db.get(Company, cid), 2025, today=date(2026, 2, 1))
     assert [(l.label, l.amount) for l in st.cost_of_revenue] == [("App Store fees", 150), ("Revenue share", 85)]
     assert [(l.label, l.amount) for l in st.expenses] == [("Hosting", 40)]
@@ -171,7 +171,7 @@ def test_statements_include_cost_of_revenue_products_and_shares(client):
 def test_payee_statement(client):
     cid, app_a, _, investor, consultant, add = setup(client)
     add(kind="expense", date="2025-03-05", amount=150, category="Revenue share", revenue_share_id=investor["id"])
-    with SessionLocal() as db:
+    with system_session() as db:
         st = revenue_shares.build_payee_statement(
             db, db.get(Company, cid), db.get(RevenueShare, investor["id"]), date(2025, 3, 1), today=date(2025, 3, 20))
     assert st.period_label == "March 2025, through March 20, 2025"
@@ -231,7 +231,7 @@ def test_funding_is_a_liability_repaid_by_payments(client):
     assert (share["funding_received"], share["funding_repaid"], share["funding_outstanding"]) == (150, 100, 50)
     assert share["paid_total"] == 235  # payments are still payments to the investor
 
-    with SessionLocal() as db:
+    with system_session() as db:
         company = db.get(Company, cid)
         st = build_statements(db, company, 2025, today=date(2026, 2, 1))
         next_year = build_statements(db, company, 2026, today=date(2026, 2, 1))

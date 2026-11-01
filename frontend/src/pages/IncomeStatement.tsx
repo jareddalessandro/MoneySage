@@ -47,6 +47,7 @@ import StatementImportModal from '../components/StatementImport';
 import {
   confirmDelete,
   Delta,
+  Editable,
   EmptyState,
   MonthSwitcher,
   PageHeader,
@@ -55,6 +56,7 @@ import {
   SortableTh,
   StatCard,
   useAppMutation,
+  useCanEdit,
   type SortDir,
 } from '../components/common';
 import { money, monthLabel, monthShort, moneyCompact, SERIES_ORDER, signedMoney, thisMonth } from '../format';
@@ -214,12 +216,14 @@ export default function IncomeStatementPage() {
         actions={
           <>
             <MonthSwitcher value={month} onChange={setMonth} />
-            <Button variant="default" leftSection={<IconPlus size={16} />} onClick={() => setEditing({ txn: null })}>
-              Add transaction
-            </Button>
-            <Button leftSection={<IconFileUpload size={16} />} onClick={() => setImporting(true)}>
-              Import statement
-            </Button>
+            <Editable>
+              <Button variant="default" leftSection={<IconPlus size={16} />} onClick={() => setEditing({ txn: null })}>
+                Add transaction
+              </Button>
+              <Button leftSection={<IconFileUpload size={16} />} onClick={() => setImporting(true)}>
+                Import statement
+              </Button>
+            </Editable>
           </>
         }
       />
@@ -273,7 +277,9 @@ export default function IncomeStatementPage() {
         <SectionCard
           title="Unexpected items"
         >
-          <QuickUnexpected key={month} month={month} defaults={unexpectedDefaults} />
+          <Editable>
+            <QuickUnexpected key={month} month={month} defaults={unexpectedDefaults} />
+          </Editable>
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl" verticalSpacing="lg">
             {(['expense', 'income'] as const).map((kind) => (
               <UnexpectedList
@@ -519,6 +525,7 @@ function StatementHeader({
 }) {
   const setSource = useAppMutation((v: TotalsFrom) => api.setTotalsFrom(month, v));
   const undo = useAppMutation((id: number) => api.undoStatementImport(id), 'Import undone');
+  const canEdit = useCanEdit();
 
   return (
     <Group gap="xs" wrap="wrap" style={{ rowGap: 6 }}>
@@ -529,6 +536,7 @@ function StatementHeader({
             {i.bank} statement · {dayjs(i.period_start).format('MMM D')} – {dayjs(i.period_end).format('MMM D')} ·{' '}
             {i.transaction_count} transactions
           </Text>
+          <Editable>
           <Anchor
             component="button"
             type="button"
@@ -545,6 +553,7 @@ function StatementHeader({
           >
             Undo import
           </Anchor>
+          </Editable>
         </Group>
       ))}
       {statement?.has_statement && (
@@ -552,15 +561,19 @@ function StatementHeader({
           <Text size="sm" c="dimmed">
             Totals from
           </Text>
-          <SegmentedControl
-            size="xs"
-            value={statement.totals_from}
-            onChange={(v) => setSource.mutate(v as TotalsFrom)}
-            data={[
-              { value: 'statement', label: 'Statement' },
-              { value: 'manual', label: 'Manual entries' },
-            ]}
-          />
+          {canEdit ? (
+            <SegmentedControl
+              size="xs"
+              value={statement.totals_from}
+              onChange={(v) => setSource.mutate(v as TotalsFrom)}
+              data={[
+                { value: 'statement', label: 'Statement' },
+                { value: 'manual', label: 'Manual entries' },
+              ]}
+            />
+          ) : (
+            <Text size="sm">{statement.totals_from === 'statement' ? 'the statement' : 'manual entries'}</Text>
+          )}
           <Tooltip
             multiline
             w={260}
@@ -978,6 +991,7 @@ function MonthNotesCard({
   onBlur?: () => void;
 }) {
   const loading = value === undefined;
+  const canEdit = useCanEdit();
   // Sized like the summary cards beside it: a label row, then a box that grows as notes get longer.
   return (
     <Paper p={{ base: '0.75rem', sm: '0.9rem' }} h="100%">
@@ -991,7 +1005,8 @@ function MonthNotesCard({
         mt={6}
         size="sm"
         aria-label={`Notes for ${monthLabel(month)}`}
-        placeholder={loading ? 'Loading…' : 'Anything to remember about this month…'}
+        placeholder={loading ? 'Loading…' : canEdit ? 'Anything to remember about this month…' : 'No notes for this month.'}
+        readOnly={!canEdit}
         autosize
         minRows={3}
         maxRows={8}

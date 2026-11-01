@@ -1,15 +1,14 @@
 from collections import defaultdict
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.models import Account, AccountKind, BalanceSnapshot
-from app.months import add_months, current_month, format_month, parse_month
+from app.months import add_months, format_month, parse_month
 from app.schemas import (
     AccountIn,
     AccountOut,
@@ -20,15 +19,16 @@ from app.schemas import (
     NetWorthPoint,
 )
 from app.services.portfolio import sync_account_snapshots
+from app.tenancy import HouseholdCtx, HouseholdDep
 
 router = APIRouter(prefix="/api", tags=["balance sheet"])
 
 MONTH = Query(pattern=r"^\d{4}-\d{2}$", description="YYYY-MM")
 
 
-def get_account(db: Session, account_id: int) -> Account:
-    account = db.get(Account, account_id)
-    if account is None:
+def get_account(ctx: HouseholdCtx, account_id: int) -> Account:
+    account = ctx.db.get(Account, account_id)
+    if account is None or account.household_id != ctx.household_id:
         raise HTTPException(404, "Account not found")
     return account
 
@@ -44,62 +44,70 @@ def _commit_unique(db: Session, name: str | None) -> None:
 # ---------- Accounts ----------
 
 @router.get("/accounts", response_model=list[AccountOut])
-def list_accounts(include_archived: bool = False, db: Session = Depends(get_db)):
-    query = select(Account).order_by(Account.kind, Account.name)
+def list_accounts(ctx: HouseholdDep, include_archived: bool = False):
+    query = select(Account).where(Account.household_id == ctx.household_id).order_by(Account.kind, Account.name)
     if not include_archived:
         query = query.where(Account.is_archived.is_(False))
-    return db.scalars(query).all()
+    return ctx.db.scalars(query).all()
 
 
 @router.post("/accounts", response_model=AccountOut, status_code=201)
-def create_account(body: AccountIn, db: Session = Depends(get_db)):
-    account = Account(**body.model_dump())
+def create_account(body: AccountIn, ctx: HouseholdDep):
+    db = ctx.db
+    account = Account(household_id=ctx.household_id, **body.model_dump())
     db.add(account)
     _commit_unique(db, body.name)
     if account.sync_from_holdings:
-        sync_account_snapshots(db)
+        sync_account_snapshots(db, ctx.household_id)
         db.commit()
     return account
 
 
 @router.patch("/accounts/{account_id}", response_model=AccountOut)
-def update_account(account_id: int, body: AccountUpdate, db: Session = Depends(get_db)):
-    account = get_account(db, account_id)
+def update_account(account_id: int, body: AccountUpdate, ctx: HouseholdDep):
+    db = ctx.db
+    account = get_account(ctx, account_id)
     for key, value in body.model_dump(exclude_unset=True).items():
         setattr(account, key, value)
     _commit_unique(db, body.name)
     if account.sync_from_holdings:
-        sync_account_snapshots(db)
+        sync_account_snapshots(db, ctx.household_id)
         db.commit()
     return account
 
 
 @router.delete("/accounts/{account_id}", status_code=204)
-def delete_account(account_id: int, db: Session = Depends(get_db)):
+def delete_account(account_id: int, ctx: HouseholdDep):
     """Deletes the account and all its monthly balances. Prefer archiving to keep history."""
-    db.delete(get_account(db, account_id))
-    db.commit()
+    ctx.db.delete(get_account(ctx, account_id))
+    ctx.db.commit()
 
 
 # ---------- Monthly balances ----------
 
-def _balances_for(db: Session, month) -> dict[int, Decimal]:
-    rows = db.execute(
-        select(BalanceSnapshot.account_id, BalanceSnapshot.balance).where(BalanceSnapshot.month == month)
+def _balances_for(ctx: HouseholdCtx, month) -> dict[int, Decimal]:
+    rows = ctx.db.execute(
+        select(BalanceSnapshot.account_id, BalanceSnapshot.balance)
+        .join(Account, Account.id == BalanceSnapshot.account_id)
+        .where(Account.household_id == ctx.household_id, BalanceSnapshot.month == month)
     ).all()
     return dict(rows)
 
 
 @router.get("/balance-sheet", response_model=BalanceSheet)
-def get_balance_sheet(month: str = MONTH, db: Session = Depends(get_db)):
+def get_balance_sheet(ctx: HouseholdDep, month: str = MONTH):
+    db = ctx.db
     m = parse_month(month)
-    if m == current_month():
-        sync_account_snapshots(db)
+    # Viewers can't write; the daily price refresh keeps synced balances current for them.
+    if m == ctx.current_month() and ctx.can_write:
+        sync_account_snapshots(db, ctx.household_id)
         db.commit()
-    balances = _balances_for(db, m)
-    previous = _balances_for(db, add_months(m, -1))
+    balances = _balances_for(ctx, m)
+    previous = _balances_for(ctx, add_months(m, -1))
 
-    accounts = db.scalars(select(Account).order_by(Account.kind, Account.name)).all()
+    accounts = db.scalars(
+        select(Account).where(Account.household_id == ctx.household_id).order_by(Account.kind, Account.name)
+    ).all()
     rows = [
         BalanceRow(account=a, balance=balances.get(a.id), previous_balance=previous.get(a.id))
         for a in accounts
@@ -120,17 +128,19 @@ def get_balance_sheet(month: str = MONTH, db: Session = Depends(get_db)):
 
 
 @router.put("/balance-sheet", response_model=BalanceSheet)
-def save_balances(body: BalanceUpdate, month: str = MONTH, db: Session = Depends(get_db)):
+def save_balances(body: BalanceUpdate, ctx: HouseholdDep, month: str = MONTH):
+    db = ctx.db
     m = parse_month(month)
+    this_month = ctx.current_month()
     for entry in body.balances:
-        account = get_account(db, entry.account_id)
+        account = get_account(ctx, entry.account_id)
         # The current month tracks the holdings live and future months have no value yet;
         # only past months can be entered by hand.
-        if account.sync_from_holdings and m >= current_month():
+        if account.sync_from_holdings and m >= this_month:
             raise HTTPException(
                 400,
                 f"'{account.name}' is synced from Investments holdings and can't be edited "
-                + ("this month" if m == current_month() else "for a future month"),
+                + ("this month" if m == this_month else "for a future month"),
             )
         if entry.balance is None:
             db.execute(
@@ -148,38 +158,40 @@ def save_balances(body: BalanceUpdate, month: str = MONTH, db: Session = Depends
                 )
             )
     db.commit()
-    return get_balance_sheet(month, db)
+    return get_balance_sheet(ctx, month)
 
 
 @router.post("/balance-sheet/copy-previous", response_model=BalanceSheet)
-def copy_previous(month: str = MONTH, db: Session = Depends(get_db)):
+def copy_previous(ctx: HouseholdDep, month: str = MONTH):
     """Fill in any missing balances this month with last month's values."""
+    db = ctx.db
     m = parse_month(month)
-    current = _balances_for(db, m)
-    previous = _balances_for(db, add_months(m, -1))
-    accounts = {a.id: a for a in db.scalars(select(Account)).all()}
+    current = _balances_for(ctx, m)
+    previous = _balances_for(ctx, add_months(m, -1))
+    accounts = {a.id: a for a in db.scalars(select(Account).where(Account.household_id == ctx.household_id)).all()}
     for account_id, balance in previous.items():
         account = accounts[account_id]
         if account_id in current or account.is_archived or account.sync_from_holdings:
             continue
         db.add(BalanceSnapshot(account_id=account_id, month=m, balance=balance))
     db.commit()
-    return get_balance_sheet(month, db)
+    return get_balance_sheet(ctx, month)
 
 
 @router.get("/balance-sheet/trend", response_model=list[NetWorthPoint])
-def net_worth_trend(months: int = Query(24, ge=1, le=240), db: Session = Depends(get_db)):
+def net_worth_trend(ctx: HouseholdDep, months: int = Query(24, ge=1, le=240)):
     """Monthly totals, one point per calendar month so the timeline is evenly spaced.
 
     Starts at the first month with any asset balance: earlier months holding only debts (history
     entered for a loan before anything else) would read as a big negative net worth. Ends at the
     last recorded month, never in the future. Months in between with nothing recorded are null.
     """
-    this_month = current_month()
-    rows = db.execute(
+    this_month = ctx.current_month()
+    rows = ctx.db.execute(
         select(BalanceSnapshot.month, Account.kind, BalanceSnapshot.balance)
         .join(Account, Account.id == BalanceSnapshot.account_id)
         .where(
+            Account.household_id == ctx.household_id,
             BalanceSnapshot.month >= add_months(this_month, -(months - 1)),
             BalanceSnapshot.month <= this_month,
         )

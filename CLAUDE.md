@@ -1,6 +1,6 @@
 # MoneySage
 
-A family finance tracker that runs locally in Docker. Single household, no login.
+A family finance tracker in Docker. It's being prepared for public hosting (Google sign-in, accounts, sharing); see **Tenancy** below. `AUTH_MODE=none` (the default) is still an offline install with no login.
 
 ## Rules
 
@@ -18,7 +18,7 @@ docker compose exec backend python -m pytest
 docker compose exec frontend npx tsc --noEmit
 ```
 
-- **Ports:** 5180 (frontend), 8100 (backend), 5433 (Postgres). The user's other project (nominalfactor) already uses 5173, 8000 and 5432, so don't move to those. They're configurable in `.env` and bound to 127.0.0.1, except the frontend can be opened to the LAN with `FRONTEND_BIND=0.0.0.0` (the user's `.env` has it, to use the app from their phone on home Wi-Fi). Vite proxies `/api`, so the backend and DB never need exposing; keep them on 127.0.0.1. There's no login, so never widen anything else.
+- **Ports:** 5180 (frontend), 8100 (backend), 5433 (Postgres). The user's other project (nominalfactor) already uses 5173, 8000 and 5432, so don't move to those. They're configurable in `.env` and bound to 127.0.0.1, except the frontend can be opened to the LAN with `FRONTEND_BIND=0.0.0.0` (the user's `.env` has it, to use the app from their phone on home Wi-Fi). Vite proxies `/api`, so the backend and DB never need exposing; keep them on 127.0.0.1. The user's install runs `AUTH_MODE=none` (no login), so never widen anything else.
 - **Hot reload:** source is bind-mounted, so code changes reload on their own. Windows bind mounts need polling (`WATCHFILES_FORCE_POLLING`, Vite `usePolling`).
 - **Frontend dependencies:** `node_modules` lives in an anonymous volume. After changing `frontend/package.json`, either run `npm install` inside the container or `docker compose up -d --build --renew-anon-volumes frontend`. Pin exact versions.
 - **Migrations:** after editing `backend/app/models.py`, run `docker compose exec backend alembic revision --autogenerate -m "..."` and review the file. Migrations apply on backend start (`alembic upgrade head` in the Dockerfile CMD).
@@ -28,7 +28,7 @@ docker compose exec frontend npx tsc --noEmit
 
 **Backend:** FastAPI + SQLAlchemy 2 + Alembic + psycopg 3, Python 3.12, in `backend/app/`.
 
-- **`models.py`:** Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun, CreditCard, Company, CompanyMember, CompanyProduct, CompanyEntry, RevenueShare, RevenueShareMonth, StatementImport, ImportRule, MonthSetting. Enums are stored as VARCHAR (`native_enum=False`).
+- **`models.py`:** User, AuthSession (`sessions`), Household, HouseholdAccess, CompanyAccess, Invite, Category, BudgetItem, Account, BalanceSnapshot, Transaction, Holding, PriceQuote, PriceRefreshRun, CreditCard, Company, CompanyMember, CompanyProduct, CompanyEntry, RevenueShare, RevenueShareMonth, StatementImport, ImportRule, MonthSetting. Enums are stored as VARCHAR (`native_enum=False`).
 - **`routers/`:** one router per tab (the Investments tab is `stocks`: route `/investments`, `/stocks` redirects there) (`budget`, `transactions` for the income statement, `statements` for statement import, `balance_sheet`, `stocks`, `categories`, `credit_cards`, `companies`). There's no Dashboard: the user removed it, and `/` redirects to Budget.
 - **`services/`:**
   - `budget.py`: normalizes frequencies to monthly amounts.
@@ -39,7 +39,47 @@ docker compose exec frontend npx tsc --noEmit
   - `company_statements.py`: year-end statements. `documents.py`: the PDF/Excel helpers both use.
   - `statement_parser.py`: reads SoFi statement PDFs (pdfplumber). `statement_import.py`: suggestions, learned rules, saving.
 - **`months.py`:** months are `"YYYY-MM"` in the API and the 1st of the month in the DB.
-- **`seed.py`:** inserts the 27 default categories (incl. Credit Card Payments) when the table is empty.
+- **`seed.py`:** inserts the 27 default categories (incl. Credit Card Payments) into each new household.
+- **`tenancy.py`:** the current user and the household/company a request works in (see Tenancy). **`rls.py`:** the Postgres row-level security policies. **`db_role.py`:** creates the restricted app role at startup.
+
+### Tenancy (households, companies, sharing)
+
+- **Two kinds of container, shared separately:** a household (budget, income statement, balance sheet, investments, credit cards, statement imports and rules, month settings) and a company. Sharing a household never reveals its members' companies, and the reverse. The user's case: share the household with their spouse, and one company only with its co-owner.
+- **Access** is `HouseholdAccess` / `CompanyAccess` rows with a role: `owner` (created it; only one who can share, change access, or delete it), `editor` (can change anything inside, can't share), `viewer` (read-only). `CompanyAccess` is who can open a company in the app; `CompanyMember` is still an equity owner. They're separate concepts.
+- **Every household-scoped table has `household_id`** (children like `balance_snapshots`, `paycheck_deductions` are scoped through their parent). Every query filters by it: routes take `ctx: HouseholdDep` and use `ctx.db` / `ctx.household_id`; `get_account(ctx, id)`-style helpers return 404 for another household's ids, including ids referenced in a body (a category or account id). Company routes under `/api/companies/{company_id}` take `ctx: CompanyDep`. Never use a bare `Depends(get_db)` in a household or company route.
+- **Which household:** the `X-Household-Id` header picks one the user can open; without it, their own (the one they own, else the earliest shared one). Others' households are 404, not 403.
+- **Viewers:** `household_ctx` / `company_ctx` refuse any non-GET/HEAD/OPTIONS request from a viewer with 403, so new write routes are covered automatically. A GET must not write for viewers (the balance sheet skips its current-month sync for them).
+- **Names are unique per household** (categories, accounts, statement keys, import hashes, import rules, credit cards). Company names are unique only among the companies one person can open (checked in the app).
+- **Timezone per household** (`Household.timezone`, default `DEFAULT_TIMEZONE` = container `TZ`): use `ctx.today()` / `ctx.current_month()` in household routes, not `date.today()`. Company routes still use the server date.
+- **Row-level security** (`rls.py`, added by the households migration) is a second wall behind the app's filters. Policies read `app.user_id` and `app.bypass_rls`, set per transaction from `Session.info` (`database.py`). They bind only the restricted role the app uses when `APP_DB_PASSWORD` is set (created at startup by `python -m app.db_role`); the table owner (migrations, an offline install) isn't subject to them. A session with no user sees nothing. Background work (scheduler, startup) uses `system_session()`, which bypasses them. Change policies in a new migration.
+- **`AUTH_MODE`:** `none` = one automatic local user (`User.is_local`, created at startup with a household), with a loud startup warning; `google` = Google sign-in (below). The households migration moved existing data into the local user's household and gave them owner access to existing companies. In `google` mode that data is hidden (nobody can sign in as the local user); it's moved with export/import.
+- **Google sign-in** (`google_oauth.py`, `sessions.py`, `routers/auth.py`, `pages/SignIn.tsx`):
+  - Authorization code flow with PKCE, done by the backend: `GET /api/auth/login` sends the browser to Google, keeping state/verifier/nonce in a 10-minute HttpOnly cookie (path `/api/auth`); `GET /api/auth/callback` checks the state, swaps the code with Google, and verifies the ID token (Google's keys, audience, issuer, expiry, nonce, `email_verified`). Failures redirect to `/?auth_error=<code>` (`cancelled`, `expired`, `not_allowed`, `unverified`, `failed`), which the sign-in page explains.
+  - Users are matched by `google_sub`, else by an email with no Google account yet (not the local user). Emails are stored lowercased. Anyone who owns no household gets one on sign-in (with the default categories). `ALLOWED_EMAILS` optionally limits who can sign in.
+  - **Sessions** live in the `sessions` table (no RLS; looked up before the user is known). The cookie holds a random token; only its SHA-256 is stored. They end after `SESSION_DAYS` (30) without use; use pushes expiry forward at most hourly and re-sends the cookie. HttpOnly, SameSite=Lax; Secure and `__Host-` prefixed when `PUBLIC_URL` is https. `POST /api/auth/logout` deletes the session.
+  - Settings: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `PUBLIC_URL` (redirect URI = `{PUBLIC_URL}/api/auth/callback`; Google allows only https or http://localhost, so LAN addresses can't sign in), `ALLOWED_EMAILS`. Startup logs what's missing.
+  - Frontend: `App` asks `/api/me` first and shows `SignInPage` on 401. Any other request's 401 fires `SIGNED_OUT_EVENT`, which rechecks `/api/me`; signing out reloads the page so nothing stays in memory. The sidebar foot shows the user (avatar, name, email) and Sign out, in google mode only.
+  - Tests fake Google (`tests/test_auth.py`): ID tokens signed with a test key, `_post_token` / `_signing_key` monkeypatched. `test_everything_needs_a_session` checks every API route answers 401 without a session; routes meant to be public go in its `PUBLIC_ROUTES`.
+- **Public pages, setup and terms** (`pages/Landing.tsx`, `pages/Legal.tsx`, `pages/Onboarding.tsx`):
+  - Signed out (google mode), every path shows the landing page, except `/privacy` and `/terms`. They're also reachable during setup (its links open them in a new tab) and inside the app (sidebar foot). `GET /api/site` (public) gives `operator_name`, `contact_email`, `governing_law` (from `.env`: `OPERATOR_NAME`, `CONTACT_EMAIL`, `GOVERNING_LAW`) and `terms_version`. The legal pages show a "Draft" warning until the first two are set, and startup logs it.
+  - The landing preview uses made-up sample figures and says so. The legal text is a draft written to match how the app actually works (what's stored, statement PDFs discarded, no ads or selling, cookies, providers, Google Limited Use, deletion within 30 days incl. backups). **If a feature changes what's collected, shared or kept, update the Privacy Policy.** It isn't legal advice; the user should have it reviewed.
+  - **Setup:** `/api/me` has `needs_setup` (no `users.onboarded_at`) and `needs_terms` (`users.terms_version` isn't `legal.TERMS_VERSION`), google mode only. `App` shows `OnboardingPage` until both are done. `POST /api/onboarding` names their own household, sets its timezone (browser's by default, validated against zoneinfo) and records agreeing to the terms (`accept_terms` must be true). After setup it only takes the agreement.
+  - **Changing the terms:** bump `TERMS_VERSION` in `backend/app/legal.py` (its date is the "last updated" shown). Everyone is asked to agree again on their next visit.
+  - `PATCH /api/household` (owner only) renames the current household or changes its timezone; the Sharing page has a "Household settings" card for it.
+- **CSRF:** every non-GET/HEAD/OPTIONS `/api/` request must send `X-Requested-With: moneysage` (403 otherwise; `require_csrf_header` in `main.py`), in both auth modes. `api.ts` adds it to every request; the test client sends it by default. Plain links (`<a href="/api/...">` downloads) are GETs and need nothing.
+- **Price refresh:** the scheduled run covers everyone's tickers (`household_id` null on the run); the Refresh button refreshes only the household's (`refresh_all(db, household_id)`). A scheduled run's failures are shown narrowed to the tickers the household holds (`failed_tickers`), never other people's.
+- **`/api/me`:** the user, their households (with `owner_name`) and companies with roles.
+- **Sharing** (`routers/sharing.py`, `components/Sharing.tsx`, `pages/Sharing.tsx`, sidebar "Sharing" in google mode only):
+  - The owner invites by email as `editor` or `viewer` (`POST /api/household/access/invites` for the current household, `/api/companies/{id}/access/invites` for a company). An `Invite` row waits for whoever signs in with that (lowercased, Google-verified) email; they see it in a banner (`PendingInvites`, `GET /api/invites`) and accept (creates the access row; a household opens right away) or decline. MoneySage sends no email: the owner tells them. Invites need `AUTH_MODE=google` (400 otherwise); max 50 people per household or company.
+  - The invite stores `target_name` because the invitee can't read the company's row (RLS) before accepting. `invites` has no RLS (looked up by email across tenants).
+  - Owner only: invite, withdraw an invite, change a role (`PATCH .../access/{user_id}`), remove someone. The owner's own access can't be changed. Anyone with access sees who else has it (`GET .../access`, `can_manage`); invites are listed to the owner only.
+  - Leaving is `DELETE /api/me/households/{id}` / `/api/me/companies/{id}`: they take only the user (not `HouseholdDep`/`CompanyDep`, which refuse viewers' writes), so viewers can leave. Owners can't leave.
+  - Company access routes are `/access`, because `/members` is already the equity owners.
+- **Household switcher:** with more than one household, the sidebar shows a Select. The choice is kept in `localStorage` (`moneysage.household`) and sent as `X-Household-Id` on every request (`api.ts` `setHouseholdId`; your own household sends no header). A remembered household you lost access to is dropped when `/api/me` loads. Plain `<a href="/api/...">` links don't carry the header, so household downloads must go through `download()`.
+- **View-only in the UI:** a banner says so on a viewer's household pages and on a company they view, and edit controls are hidden. `App` provides `CanEditContext` (false for a viewer on household pages, or on a company page they view; `/companies` and `/sharing` stay editable since those are your own). In `components/common.tsx`: wrap any control that changes data in `<Editable>` (or check `useCanEdit()`); `RowActions`, `EmptyState`'s action and `CategoryColorPicker` hide themselves. Inputs that save (balances, month notes, reported revenue) render as plain values or read-only. **New write controls must be wrapped**, or viewers see buttons that fail with 403. Export & import only offers importing in a household you own. Shared-with-you companies get an icon in the sidebar (eye for view only). The company page has a Share button for owners, linking to `/sharing#company-<id>`.
+- **Export & import** (`services/backup.py`, `routers/backup.py`, `pages/Data.tsx`, sidebar "Export & import"): how the user moves their offline data into production. `GET /api/export` is one JSON file with the current household and every company the user owns; `/api/export/household` and `/api/companies/{id}/export` (the company Export menu's "MoneySage file") export one part. `POST /api/import` takes any of them, all or nothing: its household fills the current one, which must be empty apart from unused default categories (owners only; 409 otherwise), and each company becomes a new company the importer owns (409 if they already have one by that name).
+  - The file format reuses the API's input schemas (`BudgetItemIn`, `CreditCardIn`, `RevenueShareIn`…) so imports get the same validation (e.g. payment URL normalization). Ids in the file are labels; references are remapped. Statement import keys and skipped keys survive, so re-uploading an imported statement still flags duplicates. Balance `updated_at` and import `created_at` are kept. Prices aren't in the file; the page refreshes prices after importing holdings.
+  - **When adding a model or column, add it to the export and import** and to `build_everything` in `tests/test_backup.py`, whose round trip compares every page's API output before and after.
 
 **Frontend:** React 19 + TypeScript + Vite + Mantine 8 + TanStack Query + recharts 3, in `frontend/src/`.
 
@@ -103,14 +143,14 @@ docker compose exec frontend npx tsc --noEmit
   - Allocation = market value ÷ the sum of all listed holdings' market values, so the rows add up to 100%.
 - **Portfolio value chart:** `/api/portfolio/history?days=N` values the *current* holdings over the range. It opens on the range start itself, using the last close on or before it (it looks back 10 days past weekends and holidays). YTD asks for the days since Dec 31, so its base is last year's final close. The header shows the change and % from the first point to the last. If history doesn't reach back that far, it says "since <date>". The % includes cash in the base.
 - **Tickers:** `normalize_ticker` uppercases, and crypto without `-` gets `-USD` (BTC → BTC-USD). New tickers are validated by fetching them, which returns 400 if Yahoo has no data.
-- **Timezone:** the container `TZ` (default America/Phoenix, the user's zone) decides which month "today" is in.
+- **Timezone:** each household's `timezone` decides which month "today" is in (new households get the container `TZ`, default America/Phoenix, the user's zone).
 - **Credit Card Info** (`CreditCard`, `/api/credit-cards`, `pages/CreditCards.tsx`):
   - Reference info per card: name (unique), issuer, payment site, annual fee, the month the fee posts (1-12), benefits (a JSONB list of short lines; the form takes one per line), and notes.
   - **Never add card numbers, CVVs, logins or passwords.** The page tells users not to enter them.
   - `payment_url` is normalized server-side: "chase.com" becomes `https://chase.com`, and non-web schemes (e.g. `javascript:`) are rejected. Links open in a new tab with `rel="noopener noreferrer"`.
   - It isn't linked to Balance Sheet credit card accounts yet.
 - **Companies** (`Company`, `CompanyMember`, `CompanyEntry`, `/api/companies`, `pages/Companies.tsx` + `pages/Company.tsx`):
-  - Businesses the household has a stake in, kept **separate from household finances**: company income and expenses don't touch the Budget, Income Statement or Balance Sheet.
+  - Businesses someone has a stake in, kept **separate from household finances**: company income and expenses don't touch the Budget, Income Statement or Balance Sheet. Each company is shared on its own (`CompanyAccess`); only its owner can delete it.
   - The sidebar lists each company as its own link under Companies (`/companies/:id`). `/companies` is the overview.
   - Members hold `equity_percent` (0-100, `Numeric(7,4)`). A company's members can't total more than 100% (400 on add or edit). Under 100% is allowed, and the page shows the unassigned part.
   - Entries have a `kind`: `income`, `expense`, `contribution`, `distribution` or `funding` (see revenue-share funding below), with positive amounts.
@@ -165,7 +205,8 @@ docker compose exec frontend npx tsc --noEmit
 
 ### Tests
 
-- `backend/tests/` run against the `moneysage_test` DB, which conftest creates and resets.
+- `backend/tests/` run against the `moneysage_test` DB, which conftest creates and resets. The app connects as a restricted role there, so row-level security is exercised; `TEST_WITHOUT_RLS=1` runs as the owner to check the app's own filters alone (run both after tenancy changes).
+- The `people` fixture adds other users (`people.add(email)`), shares (`share_household`, `share_company`) and switches who's asking (`people.act_as(person)`, `None` for the local user). Use `system_session()` to call services directly.
 - The scheduler is disabled (`ENABLE_SCHEDULER=false`) and `fetch_history` is monkeypatched, so there's no network.
 - Add tests alongside backend changes.
 

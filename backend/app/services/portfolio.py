@@ -2,13 +2,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from app.models import Account, AssetType, BalanceSnapshot, Holding, PriceQuote
-from app.months import add_months, current_month
+from app.models import Account, AssetType, BalanceSnapshot, Holding, Household, PriceQuote
+from app.months import add_months, current_month, today_in
 from app.services.budget import CENT
 
 
@@ -78,20 +79,28 @@ def value_holding(holding: Holding, price: LatestPrice | None) -> Valuation:
     return Valuation(price, value, day_change, gain)
 
 
-def sync_account_snapshots(db: Session, month: date | None = None) -> None:
-    """Write the current-month balance for accounts that track their linked holdings.
+def sync_account_snapshots(db: Session, household_id: int | None = None) -> None:
+    """Write the current-month balance for accounts that track their linked holdings: one household's,
+    or (household_id None, background jobs only) everyone's. "Current" is in each household's timezone.
 
     Past months are left alone, so each month keeps the value from its last refresh.
     """
-    month = month or current_month()
-    accounts = db.scalars(
-        select(Account).where(Account.sync_from_holdings.is_(True), Account.is_archived.is_(False))
-    ).all()
+    query = (
+        select(Account, Household.timezone)
+        .join(Household, Household.id == Account.household_id)
+        .where(Account.sync_from_holdings.is_(True), Account.is_archived.is_(False))
+    )
+    if household_id is not None:
+        query = query.where(Account.household_id == household_id)
+    accounts = db.execute(query).all()
     if not accounts:
         return
-    totals = _account_values(db, [a.id for a in accounts])
+    totals = _account_values(db, [a.id for a, _ in accounts])
     stmt = insert(BalanceSnapshot).values(
-        [{"account_id": a.id, "month": month, "balance": totals[a.id]} for a in accounts]
+        [
+            {"account_id": a.id, "month": current_month(today_in(tz)), "balance": totals[a.id]}
+            for a, tz in accounts
+        ]
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=["account_id", "month"],
@@ -113,43 +122,52 @@ def _account_values(
     return totals
 
 
-def finalize_previous_month(db: Session) -> None:
+def finalize_previous_month(db: Session, household_id: int | None = None) -> None:
     """Lock last month's synced balances in at its month-end closes.
 
     Normally the evening refresh on the month's last day already wrote them. If the app wasn't
     running then, last month still holds an earlier day's value, so revalue every synced snapshot
     that hasn't been written since the month ended. Run this after storing fresh quotes, so the
     month-end closes are present. A snapshot written after the month ended (including a manual
-    edit) is left alone, and missing months aren't created.
+    edit) is left alone, and missing months aren't created. Months follow each household's timezone.
     """
-    this_month = current_month()
-    month_end = this_month - timedelta(days=1)
-    month_ended_at = datetime.combine(this_month, time.min).astimezone()  # local midnight on the 1st
-    stale = db.scalars(
-        select(BalanceSnapshot)
-        .join(Account)
-        .where(
-            Account.sync_from_holdings.is_(True),
-            Account.is_archived.is_(False),
-            BalanceSnapshot.month == add_months(this_month, -1),
-            BalanceSnapshot.updated_at < month_ended_at,
+    zones = select(Household.timezone).distinct()
+    if household_id is not None:
+        zones = zones.where(Household.id == household_id)
+    for tz in db.scalars(zones).all():
+        this_month = current_month(today_in(tz))
+        month_end = this_month - timedelta(days=1)
+        month_ended_at = datetime.combine(this_month, time.min, tzinfo=ZoneInfo(tz))  # local midnight on the 1st
+        query = (
+            select(BalanceSnapshot)
+            .join(Account)
+            .join(Household, Household.id == Account.household_id)
+            .where(
+                Household.timezone == tz,
+                Account.sync_from_holdings.is_(True),
+                Account.is_archived.is_(False),
+                BalanceSnapshot.month == add_months(this_month, -1),
+                BalanceSnapshot.updated_at < month_ended_at,
+            )
         )
-    ).all()
-    if not stale:
-        return
-    totals = _account_values(db, [s.account_id for s in stale], on_or_before=month_end)
-    for snapshot in stale:
-        snapshot.balance = totals[snapshot.account_id]
-        snapshot.updated_at = func.now()  # so it's finalized once, even if the value is unchanged
+        if household_id is not None:
+            query = query.where(Account.household_id == household_id)
+        stale = db.scalars(query).all()
+        if not stale:
+            continue
+        totals = _account_values(db, [s.account_id for s in stale], on_or_before=month_end)
+        for snapshot in stale:
+            snapshot.balance = totals[snapshot.account_id]
+            snapshot.updated_at = func.now()  # so it's finalized once, even if the value is unchanged
     db.flush()
 
 
 OPENING_LOOKBACK_DAYS = 10
 
 
-def portfolio_history(db: Session, days: int) -> list[tuple[date, Decimal]]:
-    """Daily value of the *current* holdings over the last N days (prices forward-filled)."""
-    holdings = db.scalars(select(Holding)).all()
+def portfolio_history(db: Session, household_id: int, days: int, today: date) -> list[tuple[date, Decimal]]:
+    """Daily value of the household's *current* holdings over the last N days (prices forward-filled)."""
+    holdings = db.scalars(select(Holding).where(Holding.household_id == household_id)).all()
     if not holdings:
         return []
     # Cash adds the same amount every day; everything else follows its price history.
@@ -161,7 +179,7 @@ def portfolio_history(db: Session, days: int) -> list[tuple[date, Decimal]]:
     if not quantity_by_ticker:
         return []
 
-    start = date.today() - timedelta(days=days)
+    start = today - timedelta(days=days)
     # Reach back past weekends and holidays so the line can open on `start` itself (e.g. Dec 31
     # for year to date) with the last close on or before it, giving range performance a true base.
     quotes = db.execute(

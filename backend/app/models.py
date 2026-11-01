@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -26,6 +27,122 @@ MONEY = Numeric(14, 2)
 def _enum(cls: type[enum.Enum]) -> Enum:
     # Stored as VARCHAR + CHECK constraint so adding values later is a simple migration.
     return Enum(cls, native_enum=False, length=20, values_callable=lambda e: [m.value for m in e])
+
+
+def _household_id() -> Mapped[int]:
+    """The household a row belongs to. Every household-scoped query filters on it (see app.tenancy)."""
+    return mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
+
+
+class AccessRole(str, enum.Enum):
+    # Created it: can share it, change who has access, and delete it.
+    owner = "owner"
+    # Can change anything inside it, but can't share it.
+    editor = "editor"
+    # Read-only.
+    viewer = "viewer"
+
+
+# ---------- People and what they can open ----------
+#
+# Data lives in two kinds of containers, each shared on its own: a household (budget, income statement,
+# balance sheet, investments, credit cards) and a company. Sharing a household never reveals the companies
+# its members can open, and the reverse.
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Lowercased. Invites are matched against it, so it must be an address Google has verified.
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    name: Mapped[str | None] = mapped_column(String(200))
+    # Google's stable account id ("sub"); null until the person signs in with Google.
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True)
+    picture_url: Mapped[str | None] = mapped_column(String(1000))
+    # The single automatic user of an offline install (AUTH_MODE=none). It can't sign in with Google.
+    is_local: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # First-time setup (household name and timezone) finished.
+    onboarded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Which Terms of Service and Privacy Policy they agreed to (legal.TERMS_VERSION), and when.
+    terms_version: Mapped[str | None] = mapped_column(String(20))
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AuthSession(Base):
+    """A signed-in browser (AUTH_MODE=google). The cookie holds a random token; only its hash is stored, so
+    a leaked database can't be used to sign in."""
+
+    __tablename__ = "sessions"
+
+    # SHA-256 of the cookie's token, hex.
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Pushed forward as the session is used, so it ends after SESSION_DAYS without use.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    user_agent: Mapped[str | None] = mapped_column(String(300))
+
+
+class Household(Base):
+    __tablename__ = "households"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    # IANA zone (e.g. America/Phoenix). Decides which month "today" falls in for this household.
+    timezone: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class HouseholdAccess(Base):
+    __tablename__ = "household_access"
+    __table_args__ = (UniqueConstraint("household_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    role: Mapped[AccessRole] = mapped_column(_enum(AccessRole))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CompanyAccess(Base):
+    """Who can open a company in the app. Not the same as CompanyMember (an owner of equity), though the
+    same person is often both."""
+
+    __tablename__ = "company_access"
+    __table_args__ = (UniqueConstraint("company_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    role: Mapped[AccessRole] = mapped_column(_enum(AccessRole))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Invite(Base):
+    """An offer of access to a household or a company (exactly one), for whoever signs in with this email.
+    The invitee accepts or declines it; accepting turns it into an access row. Only the owner invites."""
+
+    __tablename__ = "invites"
+    __table_args__ = (
+        CheckConstraint("(household_id IS NULL) <> (company_id IS NULL)", name="invites_one_target"),
+        UniqueConstraint("email", "household_id"),
+        UniqueConstraint("email", "company_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Lowercased; matched against the invitee's Google-verified email.
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    household_id: Mapped[int | None] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    role: Mapped[AccessRole] = mapped_column(_enum(AccessRole))
+    # What the invitee is shown before they have access (they can't read the company's row yet).
+    target_name: Mapped[str] = mapped_column(String(200))
+    invited_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class CategoryKind(str, enum.Enum):
@@ -102,9 +219,10 @@ class RevenueShareBasis(str, enum.Enum):
 
 class Category(Base):
     __tablename__ = "categories"
-    __table_args__ = (UniqueConstraint("name", "kind"),)
+    __table_args__ = (UniqueConstraint("household_id", "name", "kind"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = _household_id()
     name: Mapped[str] = mapped_column(String(80))
     kind: Mapped[CategoryKind] = mapped_column(_enum(CategoryKind))
     color: Mapped[CategoryColor] = mapped_column(
@@ -121,6 +239,7 @@ class BudgetItem(Base):
     __tablename__ = "budget_items"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = _household_id()
     name: Mapped[str] = mapped_column(String(120))
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="RESTRICT"))
     # For a paycheck, amount is take-home pay (what hits the bank account), so budget totals and
@@ -156,9 +275,11 @@ class PaycheckDeduction(Base):
 
 class Account(Base):
     __tablename__ = "accounts"
+    __table_args__ = (UniqueConstraint("household_id", "name"), UniqueConstraint("household_id", "statement_key"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True)
+    household_id: Mapped[int] = _household_id()
+    name: Mapped[str] = mapped_column(String(100))
     kind: Mapped[AccountKind] = mapped_column(_enum(AccountKind))
     subtype: Mapped[str] = mapped_column(String(30))
     # When true, this account's monthly balance is computed from the holdings linked to it.
@@ -166,7 +287,7 @@ class Account(Base):
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     notes: Mapped[str | None] = mapped_column(Text)
     # Which account in an imported bank statement this is (e.g. "sofi-2845"), remembered from the last import.
-    statement_key: Mapped[str | None] = mapped_column(String(40), unique=True)
+    statement_key: Mapped[str | None] = mapped_column(String(40))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -186,8 +307,10 @@ class BalanceSnapshot(Base):
 
 class Transaction(Base):
     __tablename__ = "transactions"
+    __table_args__ = (UniqueConstraint("household_id", "import_hash"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = _household_id()
     date: Mapped[date] = mapped_column(Date, index=True)
     description: Mapped[str] = mapped_column(String(255))
     # Always positive; income vs expense comes from the category.
@@ -198,7 +321,7 @@ class Transaction(Base):
     account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"))
     # "manual" or "statement" (imported from a bank statement PDF).
     source: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual")
-    import_hash: Mapped[str | None] = mapped_column(String(64), unique=True)
+    import_hash: Mapped[str | None] = mapped_column(String(64))
     statement_import_id: Mapped[int | None] = mapped_column(
         ForeignKey("statement_imports.id", ondelete="CASCADE"), index=True
     )
@@ -213,6 +336,7 @@ class StatementImport(Base):
     __tablename__ = "statement_imports"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = _household_id()
     bank: Mapped[str] = mapped_column(String(40))
     file_name: Mapped[str] = mapped_column(String(255))
     period_start: Mapped[date] = mapped_column(Date)
@@ -228,9 +352,10 @@ class ImportRule(Base):
     """What to do with a statement line, learned from the choices made when importing."""
 
     __tablename__ = "import_rules"
-    __table_args__ = (UniqueConstraint("pattern", "direction"),)
+    __table_args__ = (UniqueConstraint("household_id", "pattern", "direction"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = _household_id()
     # Normalized description (see statement_import.normalize).
     pattern: Mapped[str] = mapped_column(String(255))
     direction: Mapped[str] = mapped_column(String(3))  # "in" (deposit) or "out" (withdrawal)
@@ -246,6 +371,7 @@ class MonthSetting(Base):
 
     __tablename__ = "month_settings"
 
+    household_id: Mapped[int] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), primary_key=True)
     month: Mapped[date] = mapped_column(Date, primary_key=True)  # the 1st of the month
     # "statement": imported rows are the totals and manual entries only explain them.
     # "manual": manual entries are the totals and imported rows are ignored.
@@ -259,6 +385,7 @@ class Holding(Base):
     __tablename__ = "holdings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = _household_id()
     ticker: Mapped[str] = mapped_column(String(20), index=True)
     asset_type: Mapped[AssetType] = mapped_column(_enum(AssetType))
     quantity: Mapped[Decimal] = mapped_column(Numeric(24, 8))
@@ -290,11 +417,16 @@ class PriceRefreshRun(Base):
     __tablename__ = "price_refresh_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Set when someone refreshed their own household's tickers; null for the scheduled run over everyone's.
+    household_id: Mapped[int | None] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(20), default="running")  # running/success/partial/failed
     tickers_updated: Mapped[int] = mapped_column(Integer, default=0)
     message: Mapped[str | None] = mapped_column(Text)
+    # Tickers that returned no data. A scheduled run covers everyone's tickers, so people are shown only
+    # the ones they hold (the message lists all of them and is never shown).
+    failed_tickers: Mapped[list[str]] = mapped_column(JSONB, default=list, server_default="[]")
 
 
 class CreditCard(Base):
@@ -304,9 +436,11 @@ class CreditCard(Base):
     """
 
     __tablename__ = "credit_cards"
+    __table_args__ = (UniqueConstraint("household_id", "name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True)
+    household_id: Mapped[int] = _household_id()
+    name: Mapped[str] = mapped_column(String(100))
     issuer: Mapped[str | None] = mapped_column(String(100))
     payment_url: Mapped[str | None] = mapped_column(String(500))
     annual_fee: Mapped[Decimal] = mapped_column(MONEY, default=Decimal(0), server_default="0")
@@ -319,12 +453,16 @@ class CreditCard(Base):
 
 
 class Company(Base):
-    """A business the household has a stake in, tracked separately from household finances."""
+    """A business someone has a stake in, tracked separately from household finances and shared on its own
+    (CompanyAccess), never through a household."""
 
     __tablename__ = "companies"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True)
+    name: Mapped[str] = mapped_column(String(100))
+    # Who created it. The row-level security policy lets its creator read it back before their
+    # CompanyAccess row exists.
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     description: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

@@ -66,17 +66,24 @@ def account_key(bank: str, last4: str) -> str:
     return f"{bank.lower()}-{last4}"
 
 
-def card_category(db: Session) -> Category | None:
-    return db.scalar(select(Category).where(Category.is_card_payments).limit(1))
+def card_category(db: Session, household_id: int) -> Category | None:
+    return db.scalar(
+        select(Category).where(Category.household_id == household_id, Category.is_card_payments).limit(1)
+    )
 
 
-def preview(db: Session, statement: ParsedStatement) -> StatementPreview:
+def preview(db: Session, household_id: int, statement: ParsedStatement) -> StatementPreview:
     categories = {
         (c.name.lower(), c.kind): c.id
-        for c in db.scalars(select(Category).where(Category.is_archived.is_(False)))
+        for c in db.scalars(
+            select(Category).where(Category.household_id == household_id, Category.is_archived.is_(False))
+        )
     }
-    card = card_category(db)
-    rules = {(r.pattern, r.direction): r for r in db.scalars(select(ImportRule))}
+    card = card_category(db, household_id)
+    rules = {
+        (r.pattern, r.direction): r
+        for r in db.scalars(select(ImportRule).where(ImportRule.household_id == household_id))
+    }
 
     accounts: list[PreviewAccount] = []
     rows: list[PreviewRow] = []
@@ -92,7 +99,7 @@ def preview(db: Session, statement: ParsedStatement) -> StatementPreview:
                 ending=acct.ending,
                 row_total=acct.row_total,
                 difference=acct.difference,
-                account_id=_guess_account(db, statement.bank, key, acct.kind),
+                account_id=_guess_account(db, household_id, statement.bank, key, acct.kind),
             )
         )
         seen: Counter = Counter()
@@ -117,7 +124,7 @@ def preview(db: Session, statement: ParsedStatement) -> StatementPreview:
                 )
             )
 
-    existing = imported_keys(db, [r.key for r in rows])
+    existing = imported_keys(db, household_id, [r.key for r in rows])
     for row in rows:
         row.duplicate = row.key in existing
     return StatementPreview(
@@ -149,14 +156,17 @@ def _suggest(description, amount, rules, categories, card) -> tuple[int | None, 
     return categories.get((name.lower(), kind)), False, "Not recognized"
 
 
-def _guess_account(db: Session, bank: str, key: str, kind: str) -> int | None:
+def _guess_account(db: Session, household_id: int, bank: str, key: str, kind: str) -> int | None:
     """The Balance Sheet account used for this statement account last time, else the only active
     asset account of that type whose name mentions the bank."""
-    remembered = db.scalar(select(Account.id).where(Account.statement_key == key))
+    remembered = db.scalar(
+        select(Account.id).where(Account.household_id == household_id, Account.statement_key == key)
+    )
     if remembered is not None:
         return remembered
     matches = db.scalars(
         select(Account.id).where(
+            Account.household_id == household_id,
             Account.kind == AccountKind.asset,
             Account.subtype == kind,
             Account.is_archived.is_(False),
@@ -167,34 +177,48 @@ def _guess_account(db: Session, bank: str, key: str, kind: str) -> int | None:
     return matches[0] if len(matches) == 1 else None
 
 
-def imported_keys(db: Session, keys: list[str]) -> set[str]:
-    """The keys among these that an earlier import saved as a transaction or skipped."""
-    found = set(db.scalars(select(Transaction.import_hash).where(Transaction.import_hash.in_(keys))))
+def imported_keys(db: Session, household_id: int, keys: list[str]) -> set[str]:
+    """The keys among these that an earlier import into the household saved as a transaction or skipped."""
+    found = set(
+        db.scalars(
+            select(Transaction.import_hash).where(
+                Transaction.household_id == household_id, Transaction.import_hash.in_(keys)
+            )
+        )
+    )
     wanted = set(keys)
-    for skipped in db.scalars(select(StatementImport.skipped_keys)):
+    for skipped in db.scalars(
+        select(StatementImport.skipped_keys).where(StatementImport.household_id == household_id)
+    ):
         found.update(wanted.intersection(skipped))
     return found
 
 
-def remember(db: Session, description: str, amount_direction: str, category_id: int | None, skip: bool) -> None:
+def remember(
+    db: Session, household_id: int, description: str, amount_direction: str, category_id: int | None, skip: bool
+) -> None:
     stmt = insert(ImportRule).values(
-        pattern=normalize(description), direction=amount_direction, category_id=category_id, skip=skip
+        household_id=household_id,
+        pattern=normalize(description),
+        direction=amount_direction,
+        category_id=category_id,
+        skip=skip,
     )
     db.execute(
         stmt.on_conflict_do_update(
-            index_elements=["pattern", "direction"],
+            index_elements=["household_id", "pattern", "direction"],
             set_={"category_id": stmt.excluded.category_id, "skip": stmt.excluded.skip, "updated_at": func.now()},
         )
     )
 
 
-def commit(db: Session, body: StatementImportIn) -> StatementImport:
+def commit(db: Session, household_id: int, body: StatementImportIn) -> StatementImport:
     accounts = {a.key: a for a in body.accounts}
     for a in body.accounts:
         if a.account_id is None:
             continue
         account = db.get(Account, a.account_id)
-        if account is None or account.kind != AccountKind.asset:
+        if account is None or account.household_id != household_id or account.kind != AccountKind.asset:
             raise HTTPException(400, f"Pick an asset account for {a.name}")
         if account.sync_from_holdings:
             raise HTTPException(400, f"{account.name} gets its balance from Investments, so it can't take a statement")
@@ -202,12 +226,12 @@ def commit(db: Session, body: StatementImportIn) -> StatementImport:
         if r.account_key not in accounts:
             raise HTTPException(400, f"Unknown statement account {r.account_key}")
 
-    existing = imported_keys(db, [r.key for r in body.rows])
+    existing = imported_keys(db, household_id, [r.key for r in body.rows])
     rows = [r for r in body.rows if r.key not in existing]
     if not rows:
         raise HTTPException(409, "Everything in this statement has already been imported")
 
-    kinds = dict(db.execute(select(Category.id, Category.kind)).all())
+    kinds = dict(db.execute(select(Category.id, Category.kind).where(Category.household_id == household_id)).all())
     for r in rows:
         if r.skip:
             continue
@@ -221,6 +245,7 @@ def commit(db: Session, body: StatementImportIn) -> StatementImport:
             raise HTTPException(400, f"“{r.description}” needs {word} category")
 
     record = StatementImport(
+        household_id=household_id,
         bank=body.bank,
         file_name=body.file_name,
         period_start=body.period_start,
@@ -241,11 +266,12 @@ def commit(db: Session, body: StatementImportIn) -> StatementImport:
     db.flush()
 
     for r in rows:
-        remember(db, r.description, direction(r.amount), None if r.skip else r.category_id, r.skip)
+        remember(db, household_id, r.description, direction(r.amount), None if r.skip else r.category_id, r.skip)
         if r.skip:
             continue
         db.add(
             Transaction(
+                household_id=household_id,
                 date=r.date,
                 description=r.description,
                 amount=abs(r.amount),
@@ -260,7 +286,11 @@ def commit(db: Session, body: StatementImportIn) -> StatementImport:
     month = body.period_end.replace(day=1)
     for a in body.accounts:
         # Remember which Balance Sheet account this statement account is, for next time.
-        db.execute(update(Account).where(Account.statement_key == a.key).values(statement_key=None))
+        db.execute(
+            update(Account)
+            .where(Account.household_id == household_id, Account.statement_key == a.key)
+            .values(statement_key=None)
+        )
         if a.account_id is None:
             continue
         db.get(Account, a.account_id).statement_key = a.key

@@ -24,6 +24,15 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-moneysage}:${POSTGRES_PASSWORD:-moneysage}@db:5432/${POSTGRES_DB:-moneysage}
+      AUTH_MODE: ${AUTH_MODE:-none}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:5180}
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
+      OPERATOR_NAME: ${OPERATOR_NAME:-}
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      GOVERNING_LAW: ${GOVERNING_LAW:-}
       PRICE_REFRESH_HOUR: ${PRICE_REFRESH_HOUR:-17}
       PRICE_REFRESH_MINUTE: ${PRICE_REFRESH_MINUTE:-30}
       PRICE_REFRESH_TZ: ${PRICE_REFRESH_TZ:-America/New_York}
@@ -47,7 +56,7 @@ services:
       - /app/node_modules
     ports:
       # FRONTEND_BIND=0.0.0.0 in .env opens the app to phones on your Wi-Fi (Vite proxies /api, so the
-      # backend and database stay local). There's no login, so only do that on a trusted network.
+      # backend and database stay local). With AUTH_MODE=none there's no login, so only do that on a trusted network.
       - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-5180}:5173"
     depends_on:
       - backend

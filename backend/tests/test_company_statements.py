@@ -3,7 +3,7 @@ from datetime import date
 
 from openpyxl import load_workbook
 
-from app.database import SessionLocal
+from app.database import system_session
 from app.models import Company
 from app.services.company_statements import build_statements
 
@@ -35,7 +35,7 @@ def setup_company(client):
 
 def test_statement_figures(client):
     cid = setup_company(client)
-    with SessionLocal() as db:
+    with system_session() as db:
         st = build_statements(db, db.get(Company, cid), 2026, today=date(2027, 2, 1))
 
     assert st.is_full_year and st.period_label == "For the year ended December 31, 2026"
@@ -55,7 +55,7 @@ def test_statement_figures(client):
     assert len(st.ledger) == 6 and st.ledger[0].date == date(2026, 1, 5)
     assert [r.amount for r in st.ledger if r.kind == "Distribution"] == [-2000]
 
-    with SessionLocal() as db:
+    with system_session() as db:
         ytd = build_statements(db, db.get(Company, cid), 2026, today=date(2026, 10, 24))
     assert not ytd.is_full_year and ytd.period_label == "Year to date, January 1 through October 24, 2026"
 

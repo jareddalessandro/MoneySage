@@ -3,10 +3,12 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from typing import Annotated, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator, model_validator
 
 from app.models import (
+    AccessRole,
     AccountKind,
     AssetType,
     CategoryColor,
@@ -530,6 +532,8 @@ class CompanyOut(ORMModel):
     description: str | None
     members: list[CompanyMemberOut]
     products: list[CompanyProductOut]
+    # Your access to it.
+    role: AccessRole | None = None
 
 
 class CompanyEntryIn(BaseModel):
@@ -622,6 +626,7 @@ class CompanyListItem(BaseModel):
     id: int
     name: str
     description: str | None
+    role: AccessRole
     members: list[CompanyMemberOut]
     year: int
     income: Num
@@ -712,3 +717,161 @@ class RevenueShareMonthIn(BaseModel):
 
 class RevenueShareMonthsUpdate(BaseModel):
     months: list[RevenueShareMonthIn] = Field(max_length=120)
+
+
+# ---------- The signed-in user ----------
+
+class UserOut(ORMModel):
+    id: int
+    email: str
+    name: str | None
+    picture_url: str | None
+    is_local: bool
+    terms_version: str | None
+
+
+class HouseholdAccessOut(BaseModel):
+    id: int
+    name: str
+    timezone: str
+    role: AccessRole
+    # Who owns it (to tell "Household" apart from someone else's "Household").
+    owner_name: str | None
+
+
+class CompanyAccessOut(BaseModel):
+    id: int
+    name: str
+    role: AccessRole
+
+
+class MeOut(BaseModel):
+    auth_mode: Literal["none", "google"]
+    user: UserOut
+    # Signed-in accounts only: first-time setup isn't done, or the current terms haven't been agreed to.
+    needs_setup: bool
+    needs_terms: bool
+    # Their own household first, then ones shared with them.
+    households: list[HouseholdAccessOut]
+    companies: list[CompanyAccessOut]
+
+
+# ---------- Sharing ----------
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class PersonOut(BaseModel):
+    user_id: int
+    name: str | None
+    email: str
+    picture_url: str | None
+    role: AccessRole
+    is_you: bool
+
+
+class InviteOut(ORMModel):
+    id: int
+    email: str
+    role: AccessRole
+    created_at: datetime
+
+
+class AccessListOut(BaseModel):
+    """Who can open a household or company. Pending invites are only listed for the owner."""
+
+    people: list[PersonOut]
+    invites: list[InviteOut]
+    can_manage: bool
+
+
+class InviteIn(BaseModel):
+    email: str = Field(max_length=320)
+    role: Literal["editor", "viewer"]
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not EMAIL_RE.match(value):
+            raise ValueError("Enter an email address")
+        return value
+
+
+class RoleIn(BaseModel):
+    role: Literal["editor", "viewer"]
+
+
+class MyInviteOut(BaseModel):
+    """An invite waiting for the signed-in user."""
+
+    id: int
+    kind: Literal["household", "company"]
+    name: str
+    role: AccessRole
+    invited_by: str | None
+    created_at: datetime
+
+
+class AcceptedOut(BaseModel):
+    kind: Literal["household", "company"]
+    id: int
+
+
+# ---------- Site, onboarding and household settings ----------
+
+def check_timezone(value: str) -> str:
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError(f"Unknown timezone '{value}'")
+    return value
+
+
+class SiteOut(BaseModel):
+    """Public facts about this install, for the landing and legal pages (no sign-in needed)."""
+
+    auth_mode: Literal["none", "google"]
+    operator_name: str | None
+    contact_email: str | None
+    governing_law: str | None
+    terms_version: str
+
+
+class OnboardingIn(BaseModel):
+    """First-time setup, or agreeing to updated terms (then the household fields can be left out)."""
+
+    household_name: str | None = Field(default=None, min_length=1, max_length=100)
+    timezone: str | None = Field(default=None, max_length=64)
+    accept_terms: Literal[True]
+
+    @field_validator("timezone")
+    @classmethod
+    def _zone(cls, value: str | None) -> str | None:
+        return None if value is None else check_timezone(value)
+
+    @field_validator("household_name")
+    @classmethod
+    def _name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("Give your household a name")
+        return value
+
+
+class HouseholdUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    timezone: str | None = Field(default=None, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def _zone(cls, value: str | None) -> str | None:
+        return None if value is None else check_timezone(value)
+
+
+class HouseholdOut(ORMModel):
+    id: int
+    name: str
+    timezone: str

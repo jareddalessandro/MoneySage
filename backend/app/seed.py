@@ -1,4 +1,3 @@
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Category, CategoryColor, CategoryKind
@@ -42,13 +41,13 @@ DEFAULT_CATEGORIES: dict[CategoryKind, list[tuple[str, CategoryColor]]] = {
 }
 
 
-def seed_categories(db: Session) -> None:
-    """Insert the default categories the first time the app starts."""
-    if db.scalar(select(Category.id).limit(1)) is not None:
-        return
+def seed_categories(db: Session, household_id: int) -> None:
+    """Insert the default categories into a new household."""
     for kind, entries in DEFAULT_CATEGORIES.items():
         db.add_all(
-            Category(name=name, kind=kind, color=color, is_card_payments=name == CARD_PAYMENTS)
+            Category(
+                household_id=household_id, name=name, kind=kind, color=color, is_card_payments=name == CARD_PAYMENTS
+            )
             for name, color in entries
         )
-    db.commit()
+    db.flush()

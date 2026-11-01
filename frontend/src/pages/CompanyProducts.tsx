@@ -3,7 +3,7 @@ import { useForm } from '@mantine/form';
 import { IconPencil, IconPlus, IconTrash } from '@tabler/icons-react';
 
 import { api } from '../api';
-import { confirmDelete, EmptyState, RowActions, SectionCard, useAppMutation } from '../components/common';
+import { confirmDelete, Editable, EmptyState, RowActions, SectionCard, useAppMutation } from '../components/common';
 import { money, percent, signedMoney } from '../format';
 import type { Company, CompanyProduct, CompanyProductInput, CompanySummary } from '../types';
 
@@ -27,9 +27,11 @@ export function Products({
       title={summary ? `Products · ${summary.year}` : 'Products'}
       actions={
         company.products.length > 0 && (
-          <Button size="xs" variant="default" leftSection={<IconPlus size={14} />} onClick={onAdd}>
-            Add product
-          </Button>
+          <Editable>
+            <Button size="xs" variant="default" leftSection={<IconPlus size={14} />} onClick={onAdd}>
+              Add product
+            </Button>
+          </Editable>
         )
       }
     >

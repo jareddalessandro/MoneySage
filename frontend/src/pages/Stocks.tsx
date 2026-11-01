@@ -43,6 +43,7 @@ import { api } from '../api';
 import {
   confirmDelete,
   Delta,
+  Editable,
   EmptyState,
   PageHeader,
   RowActions,
@@ -219,18 +220,20 @@ export default function StocksPage() {
                 </Group>
               </Tooltip>
             )}
-            <Button
-              variant="default"
-              leftSection={<IconRefresh size={16} />}
-              loading={refresh.isPending}
-              onClick={() => refresh.mutate(undefined)}
-              disabled={!holdings.some((h) => h.asset_type !== 'cash')}
-            >
-              Refresh prices
-            </Button>
-            <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing({ holding: null })}>
-              Add holding
-            </Button>
+            <Editable>
+              <Button
+                variant="default"
+                leftSection={<IconRefresh size={16} />}
+                loading={refresh.isPending}
+                onClick={() => refresh.mutate(undefined)}
+                disabled={!holdings.some((h) => h.asset_type !== 'cash')}
+              >
+                Refresh prices
+              </Button>
+              <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing({ holding: null })}>
+                Add holding
+              </Button>
+            </Editable>
           </>
         }
       />

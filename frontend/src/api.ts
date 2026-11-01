@@ -1,4 +1,6 @@
 import type {
+  AccessList,
+  AccessRole,
   Account,
   AccountInput,
   BalanceSheet,
@@ -21,7 +23,11 @@ import type {
   CreditCard,
   CreditCardInput,
   Holding,
+  ImportResult,
   HoldingInput,
+  Me,
+  MyInvite,
+  Site,
   TradeInput,
   IncomeStatement,
   IncomeTrendPoint,
@@ -40,34 +46,118 @@ import type {
   TransactionInput,
 } from './types';
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status = 0) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Fired when a request finds the session gone (signed out elsewhere, or expired). */
+export const SIGNED_OUT_EVENT = 'moneysage:signed-out';
+
+/** The backend refuses changes without this header, so other websites can't make them (see main.py). */
+const APP_HEADER = { 'X-Requested-With': 'moneysage' };
+
+// Which household requests work in (X-Household-Id). Unset means the backend's default: your own.
+const HOUSEHOLD_KEY = 'moneysage.household';
+let householdId: number | null = (() => {
+  try {
+    const saved = Number(localStorage.getItem(HOUSEHOLD_KEY));
+    return Number.isInteger(saved) && saved > 0 ? saved : null;
+  } catch {
+    return null;
+  }
+})();
+
+export function currentHouseholdId(): number | null {
+  return householdId;
+}
+
+/** Switch the household every later request works in (null = your own). The caller refetches. */
+export function setHouseholdId(id: number | null) {
+  householdId = id;
+  try {
+    if (id === null) localStorage.removeItem(HOUSEHOLD_KEY);
+    else localStorage.setItem(HOUSEHOLD_KEY, String(id));
+  } catch {
+    // remembered for this visit only
+  }
+}
+
+function baseHeaders(): Record<string, string> {
+  return householdId === null ? { ...APP_HEADER } : { ...APP_HEADER, 'X-Household-Id': String(householdId) };
+}
+
+async function failure(response: Response): Promise<ApiError> {
+  let message = `${response.status} ${response.statusText}`;
+  try {
+    const data = await response.json();
+    if (typeof data.detail === 'string') message = data.detail;
+    else if (Array.isArray(data.detail)) message = data.detail.map((d: { msg: string }) => d.msg).join('; ');
+  } catch {
+    // keep the status text
+  }
+  return new ApiError(message, response.status);
+}
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const form = body instanceof FormData;
   const response = await fetch(`/api${path}`, {
     method,
-    headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
+    headers: body === undefined || form ? baseHeaders() : { ...baseHeaders(), 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   });
-  if (!response.ok) {
-    let message = `${response.status} ${response.statusText}`;
-    try {
-      const data = await response.json();
-      if (typeof data.detail === 'string') message = data.detail;
-      else if (Array.isArray(data.detail)) message = data.detail.map((d: { msg: string }) => d.msg).join('; ');
-    } catch {
-      // keep the status text
-    }
-    throw new ApiError(message);
-  }
+  if (response.status === 401 && path !== '/me') window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+  if (!response.ok) throw await failure(response);
   return response.status === 204 ? (undefined as T) : response.json();
 }
 
+/** Fetch a file the API serves as an attachment and save it under the name it gives. */
+async function download(path: string): Promise<void> {
+  const response = await fetch(`/api${path}`, { headers: baseHeaders() });
+  if (!response.ok) throw await failure(response);
+  const name = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? 'moneysage.json';
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 const get = <T>(path: string) => request<T>('GET', path);
+
+export type AccessTarget = 'household' | number;
+const accessPath = (target: AccessTarget) => (target === 'household' ? '/household/access' : `/companies/${target}/access`);
 const qs = (params: Record<string, string | number | boolean>) =>
   '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
 
 export const api = {
+  me: () => get<Me>('/me'),
+  site: () => get<Site>('/site'),
+  signOut: () => request<void>('POST', '/auth/logout'),
+  onboarding: (body: { household_name?: string; timezone?: string; accept_terms: true }) =>
+    request<void>('POST', '/onboarding', body),
+  updateHousehold: (body: { name?: string; timezone?: string }) =>
+    request<{ id: number; name: string; timezone: string }>('PATCH', '/household', body),
+
+  /** Sharing. `target` is 'household' (the current one) or a company id. */
+  access: (target: AccessTarget) => get<AccessList>(`${accessPath(target)}`),
+  invite: (target: AccessTarget, body: { email: string; role: Exclude<AccessRole, 'owner'> }) =>
+    request<void>('POST', `${accessPath(target)}/invites`, body),
+  revokeInvite: (target: AccessTarget, inviteId: number) => request<void>('DELETE', `${accessPath(target)}/invites/${inviteId}`),
+  setRole: (target: AccessTarget, userId: number, role: Exclude<AccessRole, 'owner'>) =>
+    request<AccessList>('PATCH', `${accessPath(target)}/${userId}`, { role }),
+  removeAccess: (target: AccessTarget, userId: number) => request<void>('DELETE', `${accessPath(target)}/${userId}`),
+  leaveHousehold: (id: number) => request<void>('DELETE', `/me/households/${id}`),
+  leaveCompany: (id: number) => request<void>('DELETE', `/me/companies/${id}`),
+  myInvites: () => get<MyInvite[]>('/invites'),
+  acceptInvite: (id: number) => request<{ kind: 'household' | 'company'; id: number }>('POST', `/invites/${id}/accept`),
+  declineInvite: (id: number) => request<void>('POST', `/invites/${id}/decline`),
+
   categories: (includeArchived = false) => get<Category[]>(`/categories${qs({ include_archived: includeArchived })}`),
   createCategory: (body: { name: string; kind: CategoryKind; color?: CategoryColor }) => request<Category>('POST', '/categories', body),
   updateCategory: (id: number, body: { name?: string; color?: CategoryColor; is_archived?: boolean }) =>
@@ -123,6 +213,15 @@ export const api = {
   createCreditCard: (body: CreditCardInput) => request<CreditCard>('POST', '/credit-cards', body),
   updateCreditCard: (id: number, body: CreditCardInput) => request<CreditCard>('PUT', `/credit-cards/${id}`, body),
   deleteCreditCard: (id: number) => request<void>('DELETE', `/credit-cards/${id}`),
+
+  /** This household and every company you own, as one file. */
+  downloadExport: () => download('/export'),
+  downloadCompanyExport: (companyId: number) => download(`/companies/${companyId}/export`),
+  importExport: (file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return request<ImportResult>('POST', '/import', body);
+  },
 
   companies: (year?: number) => get<CompanyListItem[]>(`/companies${year ? qs({ year }) : ''}`),
   company: (id: number) => get<Company>(`/companies/${id}`),

@@ -23,11 +23,14 @@ import {
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
+import { notifications } from '@mantine/notifications';
 import {
   IconAlertCircle,
   IconArrowLeft,
+  IconDatabaseExport,
   IconDots,
   IconDownload,
+  IconUsers,
   IconFileSpreadsheet,
   IconFileTypePdf,
   IconPencil,
@@ -45,6 +48,7 @@ import { zeroAxis } from '../chartAxis';
 import { CATEGORY_COLORS } from '../components/CategoryColor';
 import {
   confirmDelete,
+  Editable,
   EmptyState,
   FilterControl,
   PageHeader,
@@ -53,9 +57,11 @@ import {
   SortableTh,
   StatCard,
   useAppMutation,
+  useCanEdit,
   type SortDir,
 } from '../components/common';
 import { ExpenseDonut } from '../components/ExpenseDonut';
+import { useMe } from '../components/Sharing';
 import { money, moneyCompact, percent, SERIES_ORDER, signedMoney } from '../format';
 import type {
   Company,
@@ -183,6 +189,12 @@ export default function CompanyPage() {
   const [statementShare, setStatementShare] = useState<RevenueShare | null>(null);
   const [productFilter, setProductFilter] = useState<ProductFilter>('all');
   const [entrySort, setEntrySort] = useState<SortDir>(loadEntrySort);
+  const me = useMe();
+  const canEdit = useCanEdit();
+  const exportCompany = () =>
+    api.downloadCompanyExport(id).catch((error: Error) =>
+      notifications.show({ title: 'Something went wrong', message: error.message, color: 'red' }),
+    );
 
   const { data: company, isError } = useQuery({
     queryKey: ['company', id],
@@ -266,7 +278,8 @@ export default function CompanyPage() {
             (filter === 'income' ? '+' : filter === 'expense' ? '−' : '') + money(cents(visible.reduce((s, e) => s + counted(e), 0))),
         };
   const categorySlices = expensesByCategory(entries);
-  const showExtras = shares.length === 0 || !hasProducts;
+  // Only ways to add things, so viewers don't get it.
+  const showExtras = canEdit && (shares.length === 0 || !hasProducts);
   const hasFunding = shares.some((s) => s.funding_received > 0) || entries.some((e) => e.kind === 'funding');
   const hasActivity = summary?.months.some((m) => m.income || m.expenses);
   const expensesFooter =
@@ -311,6 +324,11 @@ export default function CompanyPage() {
               onChange={(v) => v && setYear(Number(v))}
               allowDeselect={false}
             />
+            {me?.auth_mode === 'google' && company.role === 'owner' && (
+              <Button variant="default" component={Link} to={`/sharing#company-${id}`} leftSection={<IconUsers size={16} />}>
+                Share
+              </Button>
+            )}
             <Menu position="bottom-end" width={260}>
               <Menu.Target>
                 <Button variant="default" leftSection={<IconDownload size={16} />}>
@@ -340,8 +358,16 @@ export default function CompanyPage() {
                 <Text size="xs" c="dimmed" px="sm" py={6}>
                   Income statement, members' capital, cash summary, and every transaction.
                 </Text>
+                <Menu.Label>Backup</Menu.Label>
+                <Menu.Item leftSection={<IconDatabaseExport size={14} />} onClick={exportCompany}>
+                  MoneySage file
+                </Menu.Item>
+                <Text size="xs" c="dimmed" px="sm" py={6}>
+                  The whole company, all years, to import into another MoneySage.
+                </Text>
               </Menu.Dropdown>
             </Menu>
+            <Editable>
             <Button leftSection={<IconPlus size={16} />} onClick={() => setEditingEntry({ entry: null, kind: 'expense' })}>
               Add entry
             </Button>
@@ -370,6 +396,7 @@ export default function CompanyPage() {
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
+            </Editable>
           </>
         }
       />
@@ -650,9 +677,11 @@ export default function CompanyPage() {
             <SectionCard
               title="Owners"
               actions={
-                <Button size="xs" variant="default" leftSection={<IconUserPlus size={14} />} onClick={() => setEditingMember({ member: null })}>
-                  Add member
-                </Button>
+                <Editable>
+                  <Button size="xs" variant="default" leftSection={<IconUserPlus size={14} />} onClick={() => setEditingMember({ member: null })}>
+                    Add member
+                  </Button>
+                </Editable>
               }
             >
               {summary && (

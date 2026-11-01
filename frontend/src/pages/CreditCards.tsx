@@ -20,7 +20,7 @@ import dayjs from 'dayjs';
 import { useState } from 'react';
 
 import { api } from '../api';
-import { confirmDelete, EmptyState, PageHeader, StatCard, useAppMutation } from '../components/common';
+import { confirmDelete, Editable, EmptyState, PageHeader, StatCard, useAppMutation } from '../components/common';
 import { money } from '../format';
 import type { CreditCard, CreditCardInput } from '../types';
 
@@ -61,9 +61,11 @@ export default function CreditCardsPage() {
         title="Credit Card Info"
         description="Where to pay each card, what it offers, and what it costs. Don't store card numbers or passwords here."
         actions={
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing({ card: null })}>
-            Add card
-          </Button>
+          <Editable>
+            <Button leftSection={<IconPlus size={16} />} onClick={() => setEditing({ card: null })}>
+              Add card
+            </Button>
+          </Editable>
         }
       />
 
@@ -138,6 +140,7 @@ function CardTile({ card, onEdit, onDelete }: { card: CreditCard; onEdit: () => 
               </Text>
             )}
           </div>
+          <Editable>
           <Menu position="bottom-end">
             <Menu.Target>
               <ActionIcon variant="subtle" color="gray" aria-label={`${card.name} actions`}>
@@ -153,6 +156,7 @@ function CardTile({ card, onEdit, onDelete }: { card: CreditCard; onEdit: () => 
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
+          </Editable>
         </Group>
 
         <div>
