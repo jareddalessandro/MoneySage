@@ -467,3 +467,13 @@ export interface RevenueShareMonth {
   /** Balance due at the end of the month. */
   balance: number;
 }
+
+/** What an import of a MoneySage export file brought in. */
+export interface ImportResult {
+  household: boolean;
+  /** Names of the companies added. */
+  companies: string[];
+  transactions: number;
+  entries: number;
+  holdings: number;
+}

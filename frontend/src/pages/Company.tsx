@@ -23,9 +23,11 @@ import {
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
+import { notifications } from '@mantine/notifications';
 import {
   IconAlertCircle,
   IconArrowLeft,
+  IconDatabaseExport,
   IconDots,
   IconDownload,
   IconFileSpreadsheet,
@@ -183,6 +185,10 @@ export default function CompanyPage() {
   const [statementShare, setStatementShare] = useState<RevenueShare | null>(null);
   const [productFilter, setProductFilter] = useState<ProductFilter>('all');
   const [entrySort, setEntrySort] = useState<SortDir>(loadEntrySort);
+  const exportCompany = () =>
+    api.downloadCompanyExport(id).catch((error: Error) =>
+      notifications.show({ title: 'Something went wrong', message: error.message, color: 'red' }),
+    );
 
   const { data: company, isError } = useQuery({
     queryKey: ['company', id],
@@ -339,6 +345,13 @@ export default function CompanyPage() {
                 </Menu.Item>
                 <Text size="xs" c="dimmed" px="sm" py={6}>
                   Income statement, members' capital, cash summary, and every transaction.
+                </Text>
+                <Menu.Label>Backup</Menu.Label>
+                <Menu.Item leftSection={<IconDatabaseExport size={14} />} onClick={exportCompany}>
+                  MoneySage file
+                </Menu.Item>
+                <Text size="xs" c="dimmed" px="sm" py={6}>
+                  The whole company, all years, to import into another MoneySage.
                 </Text>
               </Menu.Dropdown>
             </Menu>

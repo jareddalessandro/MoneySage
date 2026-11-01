@@ -5,7 +5,18 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.database import system_session
-from app.routers import balance_sheet, budget, categories, companies, credit_cards, me, statements, stocks, transactions
+from app.routers import (
+    backup,
+    balance_sheet,
+    budget,
+    categories,
+    companies,
+    credit_cards,
+    me,
+    statements,
+    stocks,
+    transactions,
+)
 from app.tenancy import ensure_local_user
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -33,7 +44,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MoneySage", lifespan=lifespan)
 
-for module in (me, categories, budget, balance_sheet, transactions, statements, stocks, credit_cards, companies):
+for module in (me, categories, budget, balance_sheet, transactions, statements, stocks, credit_cards, companies, backup):
     app.include_router(module.router)
 
 

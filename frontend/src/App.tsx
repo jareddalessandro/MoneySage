@@ -4,6 +4,7 @@ import {
   IconBriefcase,
   IconChartLine,
   IconCreditCard,
+  IconDatabaseExport,
   IconReceipt2,
   IconScale,
   IconSettings,
@@ -20,6 +21,7 @@ import BudgetPage from './pages/Budget';
 import CompaniesPage from './pages/Companies';
 import CompanyPage from './pages/Company';
 import CreditCardsPage from './pages/CreditCards';
+import DataPage from './pages/Data';
 import IncomeStatementPage from './pages/IncomeStatement';
 import SettingsPage from './pages/Settings';
 import StocksPage from './pages/Stocks';
@@ -32,6 +34,7 @@ const NAV = [
   { to: '/credit-cards', label: 'Credit Card Info', icon: IconCreditCard },
   { to: '/companies', label: 'Companies', icon: IconBriefcase },
   { to: '/settings', label: 'Categories', icon: IconSettings },
+  { to: '/data', label: 'Export & import', icon: IconDatabaseExport },
 ];
 
 export default function App() {
@@ -103,6 +106,7 @@ export default function App() {
           <Route path="/companies" element={<CompaniesPage />} />
           <Route path="/companies/:id" element={<CompanyPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/data" element={<DataPage />} />
           <Route path="*" element={<Navigate to="/budget" replace />} />
         </Routes>
       </AppShell.Main>

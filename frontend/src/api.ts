@@ -21,6 +21,7 @@ import type {
   CreditCard,
   CreditCardInput,
   Holding,
+  ImportResult,
   HoldingInput,
   TradeInput,
   IncomeStatement,
@@ -42,6 +43,18 @@ import type {
 
 export class ApiError extends Error {}
 
+async function failure(response: Response): Promise<ApiError> {
+  let message = `${response.status} ${response.statusText}`;
+  try {
+    const data = await response.json();
+    if (typeof data.detail === 'string') message = data.detail;
+    else if (Array.isArray(data.detail)) message = data.detail.map((d: { msg: string }) => d.msg).join('; ');
+  } catch {
+    // keep the status text
+  }
+  return new ApiError(message);
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const form = body instanceof FormData;
   const response = await fetch(`/api${path}`, {
@@ -49,18 +62,21 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   });
-  if (!response.ok) {
-    let message = `${response.status} ${response.statusText}`;
-    try {
-      const data = await response.json();
-      if (typeof data.detail === 'string') message = data.detail;
-      else if (Array.isArray(data.detail)) message = data.detail.map((d: { msg: string }) => d.msg).join('; ');
-    } catch {
-      // keep the status text
-    }
-    throw new ApiError(message);
-  }
+  if (!response.ok) throw await failure(response);
   return response.status === 204 ? (undefined as T) : response.json();
+}
+
+/** Fetch a file the API serves as an attachment and save it under the name it gives. */
+async function download(path: string): Promise<void> {
+  const response = await fetch(`/api${path}`);
+  if (!response.ok) throw await failure(response);
+  const name = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? 'moneysage.json';
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 const get = <T>(path: string) => request<T>('GET', path);
@@ -123,6 +139,15 @@ export const api = {
   createCreditCard: (body: CreditCardInput) => request<CreditCard>('POST', '/credit-cards', body),
   updateCreditCard: (id: number, body: CreditCardInput) => request<CreditCard>('PUT', `/credit-cards/${id}`, body),
   deleteCreditCard: (id: number) => request<void>('DELETE', `/credit-cards/${id}`),
+
+  /** This household and every company you own, as one file. */
+  downloadExport: () => download('/export'),
+  downloadCompanyExport: (companyId: number) => download(`/companies/${companyId}/export`),
+  importExport: (file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    return request<ImportResult>('POST', '/import', body);
+  },
 
   companies: (year?: number) => get<CompanyListItem[]>(`/companies${year ? qs({ year }) : ''}`),
   company: (id: number) => get<Company>(`/companies/${id}`),

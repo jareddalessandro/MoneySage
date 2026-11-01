@@ -77,19 +77,26 @@ def upgrade() -> None:
     _access_table("household_access", "households", "household_id")
     _access_table("company_access", "companies", "company_id")
 
-    # Everything that exists so far belongs to the offline install's user.
+    # Everything that exists so far belongs to the offline install's user. A fresh database has nothing to
+    # move; the app creates the local user (with default categories) at startup instead.
     conn = op.get_bind()
-    user_id = conn.execute(
-        sa.text("INSERT INTO users (email, name, is_local) VALUES ('local@moneysage.invalid', 'You', true) RETURNING id")
-    ).scalar_one()
-    household_id = conn.execute(
-        sa.text("INSERT INTO households (name, timezone) VALUES ('Household', :tz) RETURNING id"),
-        {"tz": os.environ.get("TZ") or "America/Phoenix"},
-    ).scalar_one()
-    conn.execute(
-        sa.text("INSERT INTO household_access (household_id, user_id, role) VALUES (:h, :u, 'owner')"),
-        {"h": household_id, "u": user_id},
+    user_id = household_id = None
+    has_data = any(
+        conn.execute(sa.text(f"SELECT EXISTS (SELECT 1 FROM {table})")).scalar_one()
+        for table in SCOPED + ["month_settings", "companies"]
     )
+    if has_data:
+        user_id = conn.execute(
+            sa.text("INSERT INTO users (email, name, is_local) VALUES ('local@moneysage.invalid', 'You', true) RETURNING id")
+        ).scalar_one()
+        household_id = conn.execute(
+            sa.text("INSERT INTO households (name, timezone) VALUES ('Household', :tz) RETURNING id"),
+            {"tz": os.environ.get("TZ") or "America/Phoenix"},
+        ).scalar_one()
+        conn.execute(
+            sa.text("INSERT INTO household_access (household_id, user_id, role) VALUES (:h, :u, 'owner')"),
+            {"h": household_id, "u": user_id},
+        )
 
     for table in SCOPED + ["month_settings"]:
         op.add_column(table, sa.Column("household_id", sa.Integer(), nullable=True))
