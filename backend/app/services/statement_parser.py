@@ -1,6 +1,6 @@
 """Parse bank statement PDFs into transactions.
 
-Only SoFi checking/savings statements are supported. Their text layer places each column separately,
+Only SoFi checking/savings statements are supported (recognized by SOFI_MARKER). Their text layer places each column separately,
 so plain text extraction scrambles the rows; instead words are grouped into lines by position and
 split into columns using the x positions of the DATE / TYPE / DESCRIPTION / AMOUNT / BALANCE header.
 
@@ -32,6 +32,10 @@ HEADER = ["DATE", "TYPE", "DESCRIPTION", "AMOUNT", "BALANCE"]
 DEFAULT_COLUMNS = {"TYPE": 106.0, "DESCRIPTION": 219.0, "AMOUNT": 466.0}
 # Lines that end the transaction area of a page.
 STOP_LINES = ("Contact Information", "SoFi Checking and Savings accounts are offered")
+# The disclosure printed on every SoFi checking/savings statement. Checking for "sofi" alone would let in
+# other banks' statements that list a SoFi payment, and SoFi credit card or loan statements.
+SOFI_MARKER = "SoFi Checking and Savings accounts are offered"
+ONLY_SOFI = "Only SoFi checking and savings statements can be imported right now."
 
 
 @dataclass
@@ -111,17 +115,22 @@ def parse_statement(data: bytes) -> ParsedStatement:
     try:
         pdf = pdfplumber.open(io.BytesIO(data))
     except Exception as exc:
-        raise StatementError("Couldn't read that file as a PDF") from exc
+        raise StatementError("Couldn't read that file as a PDF. Upload the statement PDF from your bank's website.") from exc
 
     with pdf:
         pages = [_lines(p) for p in pdf.pages]
 
     text = "\n".join(line.text for page in pages for line in page)
-    if "sofi" not in text.lower():
-        raise StatementError("Only SoFi checking and savings statements can be imported right now")
+    if not text.strip():
+        raise StatementError(
+            "This PDF has no readable text, so it's probably a scan or a photo. "
+            "Download the statement PDF from your bank's website and upload that instead."
+        )
+    if SOFI_MARKER not in text:
+        raise StatementError(f"This doesn't look like a SoFi checking or savings statement. {ONLY_SOFI}")
     period = PERIOD_RE.search(text)
     if not period:
-        raise StatementError("Couldn't find the statement period in that PDF")
+        raise StatementError(f"Couldn't find the statement period in this PDF. {ONLY_SOFI}")
 
     accounts: list[ParsedAccount] = []
     account: ParsedAccount | None = None
@@ -189,7 +198,7 @@ def parse_statement(data: bytes) -> ParsedStatement:
 
     accounts = [a for a in accounts if a.rows or a.beginning is not None]
     if not accounts:
-        raise StatementError("Couldn't find any accounts in that statement")
+        raise StatementError(f"Couldn't find any checking or savings accounts in this PDF. {ONLY_SOFI}")
     return ParsedStatement(
         bank="SoFi",
         period_start=parse_date(period.group(1)),

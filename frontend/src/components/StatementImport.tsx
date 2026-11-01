@@ -17,7 +17,7 @@ import {
 import { useMediaQuery } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle, IconCircleCheck, IconFileUpload } from '@tabler/icons-react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { useMemo, useRef, useState, type DragEvent } from 'react';
 
@@ -43,7 +43,8 @@ export default function StatementImportModal({
   const [fileName, setFileName] = useState('');
   const [preview, setPreview] = useState<StatementPreview | null>(null);
 
-  const parse = useAppMutation((file: File) => api.previewStatement(file));
+  // Errors show in the picker rather than as a toast, so "only SoFi is supported" stays on screen.
+  const parse = useMutation({ mutationFn: (file: File) => api.previewStatement(file) });
   const close = () => {
     setPreview(null);
     parse.reset();
@@ -74,13 +75,23 @@ export default function StatementImportModal({
           }}
         />
       ) : (
-        <Picker loading={parse.isPending} onChoose={choose} />
+        <Picker loading={parse.isPending} error={parse.error} fileName={fileName} onChoose={choose} />
       )}
     </Modal>
   );
 }
 
-function Picker({ loading, onChoose }: { loading: boolean; onChoose: (file: File | undefined) => void }) {
+function Picker({
+  loading,
+  error,
+  fileName,
+  onChoose,
+}: {
+  loading: boolean;
+  error: Error | null;
+  fileName: string;
+  onChoose: (file: File | undefined) => void;
+}) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const drop = (e: DragEvent) => {
@@ -91,6 +102,11 @@ function Picker({ loading, onChoose }: { loading: boolean; onChoose: (file: File
 
   return (
     <Stack>
+      {error && !loading && (
+        <Alert color="red" icon={<IconAlertTriangle size={18} />} title={`Couldn't import ${fileName}`}>
+          {error.message}
+        </Alert>
+      )}
       <UnstyledButton
         className="drop-zone"
         data-over={over || undefined}
