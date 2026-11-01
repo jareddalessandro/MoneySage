@@ -58,6 +58,7 @@ def sofi_pdf(accounts, period=("Aug 1, 2026", "Aug 31, 2026")) -> bytes:
                 p.line((X_DESC, f"Transaction ID: {txn_id}"))
         p.line((18, "Contact Information"))
         p.line((21, "www.sofi.com"))
+        p.line((21, "SoFi Checking and Savings accounts are offered through SoFi Bank, N.A., Member FDIC"))
         c.showPage()
         c.setFont("Helvetica", 8)
     c.save()
@@ -147,16 +148,52 @@ def test_parser_reports_missing_rows():
     assert str(checking.difference) == "7.97"
 
 
-def test_rejects_other_files(client):
-    assert upload(client, b"not a pdf").status_code == 400
-    other_bank = io.BytesIO()
-    c = canvas.Canvas(other_bank)
-    c.drawString(72, 720, "Example Bank statement")
+def pdf_with_lines(*lines: str) -> bytes:
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf)
+    for i, text in enumerate(lines):
+        c.drawString(72, 720 - 15 * i, text)
+    c.showPage()
     c.save()
-    response = upload(client, other_bank.getvalue())
-    assert response.status_code == 400 and "SoFi" in response.json()["detail"]
+    return buf.getvalue()
+
+
+def test_rejects_other_files(client):
+    response = upload(client, b"not a pdf")
+    assert response.status_code == 400 and "Couldn't read that file as a PDF" in response.json()["detail"]
     with pytest.raises(StatementError):
         parse_statement(b"%PDF-1.4 broken")
+
+
+def test_rejects_other_banks_even_when_they_mention_sofi(client):
+    # Another bank's statement can list a payment to SoFi; that alone mustn't pass as a SoFi statement.
+    other_bank = pdf_with_lines(
+        "Wells Fargo Everyday Checking",
+        "Statement period Aug 1, 2026 - Aug 31, 2026",
+        "08/12 SOFI CREDIT CARD PAYMENT 250.00",
+    )
+    detail = upload(client, other_bank).json()["detail"]
+    assert "doesn't look like a SoFi checking or savings statement" in detail
+    assert "Only SoFi checking and savings statements" in detail
+
+
+def test_rejects_pdfs_without_text(client):
+    response = upload(client, pdf_with_lines())
+    assert response.status_code == 400 and "probably a scan" in response.json()["detail"]
+
+
+def test_sofi_pdf_that_cant_be_read_says_only_sofi_is_supported(client):
+    no_period = pdf_with_lines("SoFi Checking and Savings accounts are offered through SoFi Bank, N.A., Member FDIC")
+    detail = upload(client, no_period).json()["detail"]
+    assert "Couldn't find the statement period" in detail and "Only SoFi checking and savings" in detail
+
+    no_accounts = pdf_with_lines(
+        "Monthly Statement Period",
+        "Aug 1, 2026 - Aug 31, 2026",
+        "SoFi Checking and Savings accounts are offered through SoFi Bank, N.A., Member FDIC",
+    )
+    detail = upload(client, no_accounts).json()["detail"]
+    assert "Couldn't find any checking or savings accounts" in detail
 
 
 def test_preview_suggests_categories(client, accounts, category_id):
