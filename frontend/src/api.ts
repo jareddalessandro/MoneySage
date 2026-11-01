@@ -1,4 +1,6 @@
 import type {
+  AccessList,
+  AccessRole,
   Account,
   AccountInput,
   BalanceSheet,
@@ -24,6 +26,7 @@ import type {
   ImportResult,
   HoldingInput,
   Me,
+  MyInvite,
   TradeInput,
   IncomeStatement,
   IncomeTrendPoint,
@@ -57,6 +60,36 @@ export const SIGNED_OUT_EVENT = 'moneysage:signed-out';
 /** The backend refuses changes without this header, so other websites can't make them (see main.py). */
 const APP_HEADER = { 'X-Requested-With': 'moneysage' };
 
+// Which household requests work in (X-Household-Id). Unset means the backend's default: your own.
+const HOUSEHOLD_KEY = 'moneysage.household';
+let householdId: number | null = (() => {
+  try {
+    const saved = Number(localStorage.getItem(HOUSEHOLD_KEY));
+    return Number.isInteger(saved) && saved > 0 ? saved : null;
+  } catch {
+    return null;
+  }
+})();
+
+export function currentHouseholdId(): number | null {
+  return householdId;
+}
+
+/** Switch the household every later request works in (null = your own). The caller refetches. */
+export function setHouseholdId(id: number | null) {
+  householdId = id;
+  try {
+    if (id === null) localStorage.removeItem(HOUSEHOLD_KEY);
+    else localStorage.setItem(HOUSEHOLD_KEY, String(id));
+  } catch {
+    // remembered for this visit only
+  }
+}
+
+function baseHeaders(): Record<string, string> {
+  return householdId === null ? { ...APP_HEADER } : { ...APP_HEADER, 'X-Household-Id': String(householdId) };
+}
+
 async function failure(response: Response): Promise<ApiError> {
   let message = `${response.status} ${response.statusText}`;
   try {
@@ -73,7 +106,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const form = body instanceof FormData;
   const response = await fetch(`/api${path}`, {
     method,
-    headers: body === undefined || form ? APP_HEADER : { ...APP_HEADER, 'Content-Type': 'application/json' },
+    headers: body === undefined || form ? baseHeaders() : { ...baseHeaders(), 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   });
   if (response.status === 401 && path !== '/me') window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
@@ -83,7 +116,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 /** Fetch a file the API serves as an attachment and save it under the name it gives. */
 async function download(path: string): Promise<void> {
-  const response = await fetch(`/api${path}`);
+  const response = await fetch(`/api${path}`, { headers: baseHeaders() });
   if (!response.ok) throw await failure(response);
   const name = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') ?? '')?.[1] ?? 'moneysage.json';
   const url = URL.createObjectURL(await response.blob());
@@ -95,12 +128,29 @@ async function download(path: string): Promise<void> {
 }
 
 const get = <T>(path: string) => request<T>('GET', path);
+
+export type AccessTarget = 'household' | number;
+const accessPath = (target: AccessTarget) => (target === 'household' ? '/household/access' : `/companies/${target}/access`);
 const qs = (params: Record<string, string | number | boolean>) =>
   '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
 
 export const api = {
   me: () => get<Me>('/me'),
   signOut: () => request<void>('POST', '/auth/logout'),
+
+  /** Sharing. `target` is 'household' (the current one) or a company id. */
+  access: (target: AccessTarget) => get<AccessList>(`${accessPath(target)}`),
+  invite: (target: AccessTarget, body: { email: string; role: Exclude<AccessRole, 'owner'> }) =>
+    request<void>('POST', `${accessPath(target)}/invites`, body),
+  revokeInvite: (target: AccessTarget, inviteId: number) => request<void>('DELETE', `${accessPath(target)}/invites/${inviteId}`),
+  setRole: (target: AccessTarget, userId: number, role: Exclude<AccessRole, 'owner'>) =>
+    request<AccessList>('PATCH', `${accessPath(target)}/${userId}`, { role }),
+  removeAccess: (target: AccessTarget, userId: number) => request<void>('DELETE', `${accessPath(target)}/${userId}`),
+  leaveHousehold: (id: number) => request<void>('DELETE', `/me/households/${id}`),
+  leaveCompany: (id: number) => request<void>('DELETE', `/me/companies/${id}`),
+  myInvites: () => get<MyInvite[]>('/invites'),
+  acceptInvite: (id: number) => request<{ kind: 'household' | 'company'; id: number }>('POST', `/invites/${id}/accept`),
+  declineInvite: (id: number) => request<void>('POST', `/invites/${id}/decline`),
 
   categories: (includeArchived = false) => get<Category[]>(`/categories${qs({ include_archived: includeArchived })}`),
   createCategory: (body: { name: string; kind: CategoryKind; color?: CategoryColor }) => request<Category>('POST', '/categories', body),

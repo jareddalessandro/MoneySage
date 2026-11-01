@@ -733,6 +733,8 @@ class HouseholdAccessOut(BaseModel):
     name: str
     timezone: str
     role: AccessRole
+    # Who owns it (to tell "Household" apart from someone else's "Household").
+    owner_name: str | None
 
 
 class CompanyAccessOut(BaseModel):
@@ -747,3 +749,65 @@ class MeOut(BaseModel):
     # Their own household first, then ones shared with them.
     households: list[HouseholdAccessOut]
     companies: list[CompanyAccessOut]
+
+
+# ---------- Sharing ----------
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class PersonOut(BaseModel):
+    user_id: int
+    name: str | None
+    email: str
+    picture_url: str | None
+    role: AccessRole
+    is_you: bool
+
+
+class InviteOut(ORMModel):
+    id: int
+    email: str
+    role: AccessRole
+    created_at: datetime
+
+
+class AccessListOut(BaseModel):
+    """Who can open a household or company. Pending invites are only listed for the owner."""
+
+    people: list[PersonOut]
+    invites: list[InviteOut]
+    can_manage: bool
+
+
+class InviteIn(BaseModel):
+    email: str = Field(max_length=320)
+    role: Literal["editor", "viewer"]
+
+    @field_validator("email")
+    @classmethod
+    def _email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not EMAIL_RE.match(value):
+            raise ValueError("Enter an email address")
+        return value
+
+
+class RoleIn(BaseModel):
+    role: Literal["editor", "viewer"]
+
+
+class MyInviteOut(BaseModel):
+    """An invite waiting for the signed-in user."""
+
+    id: int
+    kind: Literal["household", "company"]
+    name: str
+    role: AccessRole
+    invited_by: str | None
+    created_at: datetime
+
+
+class AcceptedOut(BaseModel):
+    kind: Literal["household", "company"]
+    id: int

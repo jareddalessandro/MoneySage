@@ -1,21 +1,24 @@
-import { ActionIcon, AppShell, Avatar, Burger, Center, Group, Loader, NavLink, ScrollArea, Text, Tooltip } from '@mantine/core';
+import { ActionIcon, Alert, AppShell, Avatar, Burger, Center, Group, Loader, NavLink, ScrollArea, Select, Text, Tooltip } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
   IconBriefcase,
   IconChartLine,
   IconCreditCard,
   IconDatabaseExport,
+  IconEye,
   IconLogout,
   IconReceipt2,
   IconScale,
   IconSettings,
   IconTargetArrow,
+  IconUsers,
 } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
-import { api, ApiError, SIGNED_OUT_EVENT } from './api';
+import { api, ApiError, currentHouseholdId, setHouseholdId, SIGNED_OUT_EVENT } from './api';
+import { householdLabel, PendingInvites } from './components/Sharing';
 import type { Me } from './types';
 
 import BalanceSheetPage from './pages/BalanceSheet';
@@ -26,6 +29,7 @@ import CreditCardsPage from './pages/CreditCards';
 import DataPage from './pages/Data';
 import IncomeStatementPage from './pages/IncomeStatement';
 import SettingsPage from './pages/Settings';
+import SharingPage from './pages/Sharing';
 import SignInPage from './pages/SignIn';
 import StocksPage from './pages/Stocks';
 
@@ -38,6 +42,7 @@ const NAV = [
   { to: '/companies', label: 'Companies', icon: IconBriefcase },
   { to: '/settings', label: 'Categories', icon: IconSettings },
   { to: '/data', label: 'Export & import', icon: IconDatabaseExport },
+  { to: '/sharing', label: 'Sharing', icon: IconUsers, accountsOnly: true },
 ];
 
 export default function App() {
@@ -55,6 +60,15 @@ export default function App() {
   useEffect(() => {
     if (signedOut) queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== 'me' });
   }, [signedOut, queryClient]);
+  // A remembered household you no longer have access to (you left, or were removed): back to your own.
+  const households = me.data?.households;
+  useEffect(() => {
+    const chosen = currentHouseholdId();
+    if (households && chosen !== null && !households.some((h) => h.id === chosen)) {
+      setHouseholdId(null);
+      queryClient.invalidateQueries();
+    }
+  }, [households, queryClient]);
 
   if (signedOut) return <SignInPage />;
   if (me.isPending) {
@@ -73,6 +87,12 @@ function Shell({ me }: { me: Me | undefined }) {
   const { pathname } = useLocation();
   // Each company gets its own link under Companies.
   const { data: companies = [] } = useQuery({ queryKey: ['companies'], queryFn: () => api.companies() });
+  const accounts = me?.auth_mode === 'google';
+  const household = me?.households.find((h) => h.id === currentHouseholdId()) ?? me?.households[0];
+  const companyId = /^\/companies\/(\d+)/.exec(pathname)?.[1];
+  const viewOnly = companyId
+    ? companies.find((c) => c.id === Number(companyId))?.role === 'viewer'
+    : !['/companies', '/sharing'].includes(pathname) && household?.role === 'viewer';
 
   return (
     <AppShell
@@ -92,8 +112,9 @@ function Shell({ me }: { me: Me | undefined }) {
         <Group px="sm" py="md" mb="sm" visibleFrom="sm">
           <Logo />
         </Group>
+        {me && me.households.length > 1 && <HouseholdSwitcher households={me.households} current={household?.id} />}
         <AppShell.Section grow component={ScrollArea} type="scroll">
-        {NAV.map(({ to, label, icon: Icon }) => (
+        {NAV.filter((item) => accounts || !item.accountsOnly).map(({ to, label, icon: Icon }) => (
           <Fragment key={to}>
             <NavLink
               component={Link}
@@ -117,6 +138,13 @@ function Shell({ me }: { me: Me | undefined }) {
                   mb={4}
                   pl={44}
                   py={6}
+                  rightSection={
+                    c.role !== 'owner' && (
+                      <Tooltip label={c.role === 'viewer' ? 'Shared with you, view only' : 'Shared with you'}>
+                        {c.role === 'viewer' ? <IconEye size={14} stroke={1.6} /> : <IconUsers size={14} stroke={1.6} />}
+                      </Tooltip>
+                    )
+                  }
                   style={{ borderRadius: 'var(--mantine-radius-md)' }}
                   styles={{ label: { fontSize: 'var(--mantine-font-size-sm)', overflow: 'hidden', textOverflow: 'ellipsis' } }}
                 />
@@ -132,6 +160,13 @@ function Shell({ me }: { me: Me | undefined }) {
       </AppShell.Navbar>
 
       <AppShell.Main>
+        {accounts && pathname !== '/sharing' && <PendingInvites />}
+        {viewOnly && (
+          <Alert variant="light" color="gray" icon={<IconEye size={18} />} mb="xl">
+            You have view-only access {companyId ? 'to this company' : `to ${household ? householdLabel(household) : 'this household'}`}, so
+            changes won't be saved.
+          </Alert>
+        )}
         <Routes>
           <Route path="/" element={<Navigate to="/budget" replace />} />
           <Route path="/budget" element={<BudgetPage />} />
@@ -145,6 +180,7 @@ function Shell({ me }: { me: Me | undefined }) {
           <Route path="/companies/:id" element={<CompanyPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/data" element={<DataPage />} />
+          <Route path="/sharing" element={<SharingPage />} />
           <Route path="*" element={<Navigate to="/budget" replace />} />
         </Routes>
       </AppShell.Main>
@@ -155,6 +191,33 @@ function Shell({ me }: { me: Me | undefined }) {
 function StocksRedirect() {
   const { search } = useLocation();
   return <Navigate to={`/investments${search}`} replace />;
+}
+
+/** Which household the app shows: your own, or one shared with you. */
+function HouseholdSwitcher({ households, current }: { households: Me['households']; current: number | undefined }) {
+  const queryClient = useQueryClient();
+  return (
+    <Select
+      aria-label="Household"
+      mx="sm"
+      mb="md"
+      data={households.map((h) => ({
+        value: String(h.id),
+        label: householdLabel(h) + (h.role === 'viewer' ? ' (view only)' : ''),
+      }))}
+      value={current === undefined ? null : String(current)}
+      allowDeselect={false}
+      comboboxProps={{ width: 280, position: 'bottom-start' }}
+      leftSection={<IconUsers size={16} stroke={1.6} />}
+      onChange={(value) => {
+        if (!value) return;
+        const id = Number(value);
+        // Your own household is the backend's default, so it needs no header.
+        setHouseholdId(households[0]?.role === 'owner' && households[0].id === id ? null : id);
+        queryClient.invalidateQueries();
+      }}
+    />
+  );
 }
 
 function UserRow({ user }: { user: Me['user'] }) {

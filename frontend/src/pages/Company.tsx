@@ -30,6 +30,7 @@ import {
   IconDatabaseExport,
   IconDots,
   IconDownload,
+  IconUsers,
   IconFileSpreadsheet,
   IconFileTypePdf,
   IconPencil,
@@ -58,6 +59,7 @@ import {
   type SortDir,
 } from '../components/common';
 import { ExpenseDonut } from '../components/ExpenseDonut';
+import { useMe } from '../components/Sharing';
 import { money, moneyCompact, percent, SERIES_ORDER, signedMoney } from '../format';
 import type {
   Company,
@@ -185,6 +187,7 @@ export default function CompanyPage() {
   const [statementShare, setStatementShare] = useState<RevenueShare | null>(null);
   const [productFilter, setProductFilter] = useState<ProductFilter>('all');
   const [entrySort, setEntrySort] = useState<SortDir>(loadEntrySort);
+  const me = useMe();
   const exportCompany = () =>
     api.downloadCompanyExport(id).catch((error: Error) =>
       notifications.show({ title: 'Something went wrong', message: error.message, color: 'red' }),
@@ -317,6 +320,11 @@ export default function CompanyPage() {
               onChange={(v) => v && setYear(Number(v))}
               allowDeselect={false}
             />
+            {me?.auth_mode === 'google' && company.role === 'owner' && (
+              <Button variant="default" component={Link} to={`/sharing#company-${id}`} leftSection={<IconUsers size={16} />}>
+                Share
+              </Button>
+            )}
             <Menu position="bottom-end" width={260}>
               <Menu.Target>
                 <Button variant="default" leftSection={<IconDownload size={16} />}>

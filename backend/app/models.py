@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -113,6 +114,29 @@ class CompanyAccess(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     role: Mapped[AccessRole] = mapped_column(_enum(AccessRole))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Invite(Base):
+    """An offer of access to a household or a company (exactly one), for whoever signs in with this email.
+    The invitee accepts or declines it; accepting turns it into an access row. Only the owner invites."""
+
+    __tablename__ = "invites"
+    __table_args__ = (
+        CheckConstraint("(household_id IS NULL) <> (company_id IS NULL)", name="invites_one_target"),
+        UniqueConstraint("email", "household_id"),
+        UniqueConstraint("email", "company_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Lowercased; matched against the invitee's Google-verified email.
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    household_id: Mapped[int | None] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    role: Mapped[AccessRole] = mapped_column(_enum(AccessRole))
+    # What the invitee is shown before they have access (they can't read the company's row yet).
+    target_name: Mapped[str] = mapped_column(String(200))
+    invited_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

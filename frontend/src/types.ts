@@ -333,6 +333,8 @@ export interface Company {
   description: string | null;
   members: CompanyMember[];
   products: CompanyProduct[];
+  /** Your access to it. */
+  role?: AccessRole;
 }
 
 export type CompanyInput = { name: string; description: string | null };
@@ -485,6 +487,23 @@ export interface Me {
   auth_mode: 'none' | 'google';
   user: { id: number; email: string; name: string | null; picture_url: string | null; is_local: boolean };
   /** Their own household first, then ones shared with them. */
-  households: { id: number; name: string; timezone: string; role: AccessRole }[];
+  households: { id: number; name: string; timezone: string; role: AccessRole; owner_name: string | null }[];
   companies: { id: number; name: string; role: AccessRole }[];
+}
+
+/** Who can open a household or company. Invites are only listed for the owner. */
+export interface AccessList {
+  people: { user_id: number; name: string | null; email: string; picture_url: string | null; role: AccessRole; is_you: boolean }[];
+  invites: { id: number; email: string; role: AccessRole; created_at: string }[];
+  can_manage: boolean;
+}
+
+/** An invite waiting for you. */
+export interface MyInvite {
+  id: number;
+  kind: 'household' | 'company';
+  name: string;
+  role: AccessRole;
+  invited_by: string | null;
+  created_at: string;
 }

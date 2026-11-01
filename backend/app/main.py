@@ -16,6 +16,7 @@ from app.routers import (
     companies,
     credit_cards,
     me,
+    sharing,
     statements,
     stocks,
     transactions,
@@ -72,7 +73,7 @@ async def require_csrf_header(request: Request, call_next):
     return await call_next(request)
 
 
-for module in (auth, me, categories, budget, balance_sheet, transactions, statements, stocks, credit_cards, companies, backup):
+for module in (auth, me, sharing, categories, budget, balance_sheet, transactions, statements, stocks, credit_cards, companies, backup):
     app.include_router(module.router)
 
 
