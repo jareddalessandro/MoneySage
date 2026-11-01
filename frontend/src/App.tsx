@@ -20,7 +20,7 @@ import { Link, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { api, ApiError, currentHouseholdId, setHouseholdId, SIGNED_OUT_EVENT } from './api';
 import { CanEditContext } from './components/common';
 import { householdLabel, PendingInvites } from './components/Sharing';
-import type { Me } from './types';
+import type { Me, Site } from './types';
 
 import BalanceSheetPage from './pages/BalanceSheet';
 import BudgetPage from './pages/Budget';
@@ -30,8 +30,10 @@ import CreditCardsPage from './pages/CreditCards';
 import DataPage from './pages/Data';
 import IncomeStatementPage from './pages/IncomeStatement';
 import SettingsPage from './pages/Settings';
+import LandingPage from './pages/Landing';
+import { PrivacyPage, TermsPage } from './pages/Legal';
+import OnboardingPage from './pages/Onboarding';
 import SharingPage from './pages/Sharing';
-import SignInPage from './pages/SignIn';
 import StocksPage from './pages/Stocks';
 
 const NAV = [
@@ -49,7 +51,9 @@ const NAV = [
 export default function App() {
   const queryClient = useQueryClient();
   const me = useQuery({ queryKey: ['me'], queryFn: () => api.me(), retry: false });
+  const { data: site } = useQuery({ queryKey: ['site'], queryFn: () => api.site(), staleTime: Infinity });
   const signedOut = me.error instanceof ApiError && me.error.status === 401;
+  const { pathname } = useLocation();
 
   // A request that finds the session gone (expired, or signed out in another tab) asks again who's here.
   useEffect(() => {
@@ -59,7 +63,7 @@ export default function App() {
   }, [queryClient]);
   // Nothing from the last session stays in memory once it's over.
   useEffect(() => {
-    if (signedOut) queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== 'me' });
+    if (signedOut) queryClient.removeQueries({ predicate: (q) => !['me', 'site'].includes(q.queryKey[0] as string) });
   }, [signedOut, queryClient]);
   // A remembered household you no longer have access to (you left, or were removed): back to your own.
   const households = me.data?.households;
@@ -71,7 +75,12 @@ export default function App() {
     }
   }, [households, queryClient]);
 
-  if (signedOut) return <SignInPage />;
+  // The legal pages are reachable signed out and during setup (its links open them in a new tab).
+  const legal = pathname === '/privacy' || pathname === '/terms';
+  const needsOnboarding = !!me.data && me.data.auth_mode === 'google' && (me.data.needs_setup || me.data.needs_terms);
+  if ((signedOut || needsOnboarding) && legal) return <PublicLegal site={site} />;
+  if (signedOut) return <LandingPage site={site} />;
+  if (needsOnboarding) return <OnboardingPage me={me.data!} />;
   if (me.isPending) {
     return (
       <Center mih="100dvh">
@@ -80,10 +89,19 @@ export default function App() {
     );
   }
   // Any other error (say, the backend is restarting) still shows the app; its pages report their own errors.
-  return <Shell me={me.data} />;
+  return <Shell me={me.data} site={site} />;
 }
 
-function Shell({ me }: { me: Me | undefined }) {
+function PublicLegal({ site }: { site: Site | undefined }) {
+  return (
+    <Routes>
+      <Route path="/privacy" element={<PrivacyPage site={site} />} />
+      <Route path="/terms" element={<TermsPage site={site} />} />
+    </Routes>
+  );
+}
+
+function Shell({ me, site }: { me: Me | undefined; site: Site | undefined }) {
   const [opened, { toggle, close }] = useDisclosure();
   const { pathname } = useLocation();
   // Each company gets its own link under Companies.
@@ -93,7 +111,7 @@ function Shell({ me }: { me: Me | undefined }) {
   const companyId = /^\/companies\/(\d+)/.exec(pathname)?.[1];
   const viewOnly = companyId
     ? companies.find((c) => c.id === Number(companyId))?.role === 'viewer'
-    : !['/companies', '/sharing'].includes(pathname) && household?.role === 'viewer';
+    : !['/companies', '/sharing', '/privacy', '/terms'].includes(pathname) && household?.role === 'viewer';
 
   return (
     <AppShell
@@ -156,6 +174,14 @@ function Shell({ me }: { me: Me | undefined }) {
         {me?.auth_mode === 'google' && (
           <AppShell.Section pt="sm">
             <UserRow user={me.user} />
+            <Group gap="md" px="sm" pt={6}>
+              <Text component={Link} to="/privacy" size="xs" c="dimmed" onClick={close} className="hit-44">
+                Privacy
+              </Text>
+              <Text component={Link} to="/terms" size="xs" c="dimmed" onClick={close} className="hit-44">
+                Terms
+              </Text>
+            </Group>
           </AppShell.Section>
         )}
       </AppShell.Navbar>
@@ -183,6 +209,8 @@ function Shell({ me }: { me: Me | undefined }) {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/data" element={<DataPage />} />
           <Route path="/sharing" element={<SharingPage />} />
+          <Route path="/privacy" element={<PrivacyPage site={site} signedIn />} />
+          <Route path="/terms" element={<TermsPage site={site} signedIn />} />
           <Route path="*" element={<Navigate to="/budget" replace />} />
         </Routes>
         </CanEditContext.Provider>

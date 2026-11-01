@@ -21,7 +21,7 @@ from app.models import AuthSession, HouseholdAccess, User
 CLIENT_ID = "test-client.apps.googleusercontent.com"
 KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-PUBLIC_ROUTES = {"/api/health", "/api/auth/login", "/api/auth/callback", "/api/auth/logout"}
+PUBLIC_ROUTES = {"/api/health", "/api/site", "/api/auth/login", "/api/auth/callback", "/api/auth/logout"}
 
 
 @pytest.fixture

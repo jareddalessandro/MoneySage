@@ -41,6 +41,8 @@ async def lifespan(app: FastAPI):
             log.error("AUTH_MODE=google but GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET aren't set, so nobody can sign in.")
         if not settings.app_db_password:
             log.warning("APP_DB_PASSWORD isn't set, so row-level security isn't protecting households from each other.")
+        if not (settings.operator_name and settings.contact_email):
+            log.warning("OPERATOR_NAME / CONTACT_EMAIL aren't set, so the Privacy Policy and Terms have no one to contact.")
         if not settings.secure_cookies:
             log.warning("PUBLIC_URL isn't https, so the session cookie isn't Secure. Fine on localhost, not on a server.")
     scheduler = None

@@ -27,6 +27,7 @@ import type {
   HoldingInput,
   Me,
   MyInvite,
+  Site,
   TradeInput,
   IncomeStatement,
   IncomeTrendPoint,
@@ -136,7 +137,12 @@ const qs = (params: Record<string, string | number | boolean>) =>
 
 export const api = {
   me: () => get<Me>('/me'),
+  site: () => get<Site>('/site'),
   signOut: () => request<void>('POST', '/auth/logout'),
+  onboarding: (body: { household_name?: string; timezone?: string; accept_terms: true }) =>
+    request<void>('POST', '/onboarding', body),
+  updateHousehold: (body: { name?: string; timezone?: string }) =>
+    request<{ id: number; name: string; timezone: string }>('PATCH', '/household', body),
 
   /** Sharing. `target` is 'household' (the current one) or a company id. */
   access: (target: AccessTarget) => get<AccessList>(`${accessPath(target)}`),

@@ -1,11 +1,13 @@
-import { SimpleGrid, Text } from '@mantine/core';
+import { Button, Group, Select, SimpleGrid, Text, TextInput } from '@mantine/core';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import { api, currentHouseholdId, setHouseholdId } from '../api';
-import { PageHeader, SectionCard } from '../components/common';
+import { PageHeader, SectionCard, useAppMutation } from '../components/common';
 import { AccessCard, householdLabel, PendingInvites, useMe } from '../components/Sharing';
+import type { Me } from '../types';
+import { timezoneOptions } from './Onboarding';
 
 export default function SharingPage() {
   const me = useMe();
@@ -47,6 +49,7 @@ export default function SharingPage() {
       />
       <PendingInvites />
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="lg">
+        {household?.role === 'owner' && <HouseholdSettings key={household.id} household={household} />}
         {household && (
           <AccessCard
             key={`household-${household.id}`}
@@ -71,5 +74,44 @@ export default function SharingPage() {
         ))}
       </SimpleGrid>
     </>
+  );
+}
+
+/** The owner names their household and sets the timezone that decides which day and month it is. */
+function HouseholdSettings({ household }: { household: Me['households'][number] }) {
+  const [name, setName] = useState(household.name);
+  const [timezone, setTimezone] = useState(household.timezone);
+  const zones = useMemo(() => timezoneOptions(household.timezone), [household.timezone]);
+  const save = useAppMutation(() => api.updateHousehold({ name: name.trim(), timezone }), 'Household saved');
+  const changed = name.trim() !== household.name || timezone !== household.timezone;
+
+  return (
+    <SectionCard title="Household settings">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (changed && name.trim()) save.mutate(undefined);
+        }}
+      >
+        <Group gap="sm" align="flex-end" wrap="wrap">
+          <TextInput label="Name" value={name} onChange={(e) => setName(e.currentTarget.value)} maxLength={100} style={{ flex: '1 1 200px' }} />
+          <Select
+            label="Timezone"
+            data={zones}
+            value={timezone}
+            onChange={(v) => v && setTimezone(v)}
+            searchable
+            allowDeselect={false}
+            style={{ flex: '1 1 200px' }}
+          />
+          <Button type="submit" disabled={!changed || !name.trim()} loading={save.isPending}>
+            Save
+          </Button>
+        </Group>
+      </form>
+      <Text size="xs" c="dimmed" mt="sm">
+        The timezone decides which day and month it is for the budget, income statement and balance sheet.
+      </Text>
+    </SectionCard>
   );
 }

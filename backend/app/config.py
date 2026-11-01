@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     allowed_emails: str = ""
     # A session ends after this many days without use.
     session_days: int = 30
+    # Shown on the landing page, Privacy Policy and Terms (who runs this site and how to reach them, and
+    # whose law the Terms follow, e.g. "Arizona, United States"). Set them before opening sign-ups.
+    operator_name: str = ""
+    contact_email: str = ""
+    governing_law: str = ""
     # Timezone for new households (the container's TZ by default).
     default_timezone: str = os.environ.get("TZ") or "America/Phoenix"
     price_refresh_hour: int = 17

@@ -485,7 +485,10 @@ export type AccessRole = 'owner' | 'editor' | 'viewer';
 /** Who's signed in, and what they can open. */
 export interface Me {
   auth_mode: 'none' | 'google';
-  user: { id: number; email: string; name: string | null; picture_url: string | null; is_local: boolean };
+  user: { id: number; email: string; name: string | null; picture_url: string | null; is_local: boolean; terms_version: string | null };
+  /** Signed-in accounts: first-time setup isn't done / the current terms haven't been agreed to. */
+  needs_setup: boolean;
+  needs_terms: boolean;
   /** Their own household first, then ones shared with them. */
   households: { id: number; name: string; timezone: string; role: AccessRole; owner_name: string | null }[];
   companies: { id: number; name: string; role: AccessRole }[];
@@ -506,4 +509,14 @@ export interface MyInvite {
   role: AccessRole;
   invited_by: string | null;
   created_at: string;
+}
+
+/** Public facts about this install (no sign-in needed). */
+export interface Site {
+  auth_mode: 'none' | 'google';
+  operator_name: string | null;
+  contact_email: string | null;
+  governing_law: string | null;
+  /** The date of the current Terms and Privacy Policy, YYYY-MM-DD. */
+  terms_version: string;
 }

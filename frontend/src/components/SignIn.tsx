@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Card, Center, Stack, Text, Title } from '@mantine/core';
+import { Alert, Box, Button, type ButtonProps } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { useState } from 'react';
 
@@ -22,47 +22,23 @@ function takeAuthError(): string | null {
   return ERRORS[code] ?? ERRORS.failed;
 }
 
-export default function SignInPage() {
+/** Why the last sign-in failed, if it did (shown once). */
+export function SignInError() {
   const [error] = useState(takeAuthError);
-
+  if (!error) return null;
   return (
-    <Center mih="100dvh" p="md">
-      <Card w="100%" maw={420} p={{ base: 'lg', sm: 'xl' }}>
-        <Stack gap="lg">
-          <Text className="headline" fw={800} size="lg" lts="-0.01em">
-            💰 MoneySage
-          </Text>
-          <div>
-            <Title order={1} fz="1.75rem" lts="-0.01em" mb={6}>
-              Sign in
-            </Title>
-            <Text size="sm" c="dimmed">
-              Your budget, income statement, balance sheet and investments in one place, shared with the people
-              you choose.
-            </Text>
-          </div>
-          {error && (
-            <Alert color="red" variant="light" icon={<IconAlertCircle size={18} />}>
-              {error}
-            </Alert>
-          )}
-          <Button
-            component="a"
-            href="/api/auth/login"
-            variant="default"
-            size="md"
-            radius="xl"
-            fullWidth
-            leftSection={<GoogleLogo />}
-          >
-            Sign in with Google
-          </Button>
-          <Text size="xs" c="dimmed">
-            Signing in for the first time creates your own private household. Nothing is shared until you share it.
-          </Text>
-        </Stack>
-      </Card>
-    </Center>
+    <Alert color="red" variant="light" icon={<IconAlertCircle size={18} />}>
+      {error}
+    </Alert>
+  );
+}
+
+/** Starts Google sign-in (a full page visit, since the backend sends the browser on to Google). */
+export function GoogleSignInButton({ label = 'Sign in with Google', ...props }: { label?: string } & ButtonProps) {
+  return (
+    <Button component="a" href="/api/auth/login" variant="default" radius="xl" leftSection={<GoogleLogo />} {...props}>
+      {label}
+    </Button>
   );
 }
 
