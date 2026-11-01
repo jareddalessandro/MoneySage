@@ -16,6 +16,17 @@ class Settings(BaseSettings):
     # "none": no sign-in; everyone is one automatic local user (an offline install on a trusted network).
     # "google": accounts via Google sign-in, with sharing.
     auth_mode: Literal["none", "google"] = "none"
+    # From a Google Cloud "OAuth client ID" (type Web application). Its authorized redirect URI must be
+    # {public_url}/api/auth/callback.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    # The address people open the app at, with no trailing slash. An https address also makes the session
+    # cookie Secure.
+    public_url: str = "http://localhost:5180"
+    # Comma-separated emails allowed to sign in (case doesn't matter). Empty lets any Google account in.
+    allowed_emails: str = ""
+    # A session ends after this many days without use.
+    session_days: int = 30
     # Timezone for new households (the container's TZ by default).
     default_timezone: str = os.environ.get("TZ") or "America/Phoenix"
     price_refresh_hour: int = 17
@@ -23,6 +34,14 @@ class Settings(BaseSettings):
     price_refresh_tz: str = "America/New_York"
     # Turned off by tests so they never hit the network or start background jobs.
     enable_scheduler: bool = True
+
+    @property
+    def secure_cookies(self) -> bool:
+        return self.public_url.startswith("https://")
+
+    @property
+    def allowed_email_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.allowed_emails.split(",") if e.strip()]
 
     @property
     def app_database_url(self) -> str:

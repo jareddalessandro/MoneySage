@@ -85,6 +85,12 @@ body {
   background-color: var(--surface-container-low);
 }
 
+/* Who's signed in, at the foot of the sidebar: a tone step up instead of a divider. */
+.user-row {
+  background-color: var(--surface-container);
+  border-radius: var(--mantine-radius-md);
+}
+
 /* Primary CTA: gradient with dark on_primary text so it stays legible. */
 .mantine-Button-root[data-variant='gradient'] {
   --button-color: var(--on-primary);

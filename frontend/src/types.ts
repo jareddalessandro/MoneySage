@@ -477,3 +477,14 @@ export interface ImportResult {
   entries: number;
   holdings: number;
 }
+
+export type AccessRole = 'owner' | 'editor' | 'viewer';
+
+/** Who's signed in, and what they can open. */
+export interface Me {
+  auth_mode: 'none' | 'google';
+  user: { id: number; email: string; name: string | null; picture_url: string | null; is_local: boolean };
+  /** Their own household first, then ones shared with them. */
+  households: { id: number; name: string; timezone: string; role: AccessRole }[];
+  companies: { id: number; name: string; role: AccessRole }[];
+}

@@ -23,6 +23,7 @@ import type {
   Holding,
   ImportResult,
   HoldingInput,
+  Me,
   TradeInput,
   IncomeStatement,
   IncomeTrendPoint,
@@ -41,7 +42,20 @@ import type {
   TransactionInput,
 } from './types';
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status = 0) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Fired when a request finds the session gone (signed out elsewhere, or expired). */
+export const SIGNED_OUT_EVENT = 'moneysage:signed-out';
+
+/** The backend refuses changes without this header, so other websites can't make them (see main.py). */
+const APP_HEADER = { 'X-Requested-With': 'moneysage' };
 
 async function failure(response: Response): Promise<ApiError> {
   let message = `${response.status} ${response.statusText}`;
@@ -52,16 +66,17 @@ async function failure(response: Response): Promise<ApiError> {
   } catch {
     // keep the status text
   }
-  return new ApiError(message);
+  return new ApiError(message, response.status);
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const form = body instanceof FormData;
   const response = await fetch(`/api${path}`, {
     method,
-    headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
+    headers: body === undefined || form ? APP_HEADER : { ...APP_HEADER, 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   });
+  if (response.status === 401 && path !== '/me') window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
   if (!response.ok) throw await failure(response);
   return response.status === 204 ? (undefined as T) : response.json();
 }
@@ -84,6 +99,9 @@ const qs = (params: Record<string, string | number | boolean>) =>
   '?' + new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
 
 export const api = {
+  me: () => get<Me>('/me'),
+  signOut: () => request<void>('POST', '/auth/logout'),
+
   categories: (includeArchived = false) => get<Category[]>(`/categories${qs({ include_archived: includeArchived })}`),
   createCategory: (body: { name: string; kind: CategoryKind; color?: CategoryColor }) => request<Category>('POST', '/categories', body),
   updateCategory: (id: number, body: { name?: string; color?: CategoryColor; is_archived?: boolean }) =>

@@ -83,7 +83,9 @@ def fake_prices(monkeypatch):
 
 @pytest.fixture
 def client():
-    with TestClient(app) as c:  # runs lifespan, which creates the local user and their household
+    # Runs lifespan, which creates the local user and their household. Sends the header the app's own
+    # requests carry (see require_csrf_header).
+    with TestClient(app, headers={"X-Requested-With": "moneysage"}) as c:
         yield c
 
 

@@ -11,10 +11,11 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import sessions
 from app.config import settings
 from app.database import get_db, set_session_user
 from app.models import AccessRole, Company, CompanyAccess, Household, HouseholdAccess, User
@@ -28,13 +29,18 @@ DEFAULT_HOUSEHOLD_NAME = "Household"
 
 # ---------- The current user ----------
 
-def get_current_user(db: Session = Depends(get_db)) -> User:
+def get_current_user(request: Request, response: Response, db: Session = Depends(get_db)) -> User:
     if settings.auth_mode == "none":
         user = db.scalar(select(User).where(User.is_local.is_(True)))
         if user is None:
             raise HTTPException(503, "The local user hasn't been set up yet; restart the backend")
     else:
-        raise HTTPException(401, "Sign in to continue")
+        token = request.cookies.get(sessions.cookie_name())
+        user, touched = sessions.user_for(db, token)
+        if user is None:
+            raise HTTPException(401, "Sign in to continue")
+        if touched:
+            sessions.set_cookie(response, token)
     set_session_user(db, user.id)
     return user
 
