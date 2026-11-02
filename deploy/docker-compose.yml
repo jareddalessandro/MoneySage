@@ -1,10 +1,9 @@
 # Tallyvio in production, on one server: Postgres, the backend, Caddy (HTTPS and the built frontend) and
 # nightly backups. Settings and secrets come from deploy/.env (see .env.example and README.md here).
 #
-#   docker compose pull && docker compose up -d      # images built by GitHub Actions
-#   docker compose up -d --build                     # or build on the server (needs 2 GB of memory)
+#   docker compose build --pull && docker compose up -d     # images are built here, on the server
 #
-# Memory limits fit a 1 GB server with swap; on 2 GB they leave plenty of room.
+# Building the frontend needs a 2 GB server. The memory limits below are for running, and leave room to spare.
 name: tallyvio
 
 x-logging: &logging
@@ -36,7 +35,7 @@ services:
     logging: *logging
 
   backend:
-    image: ${IMAGE_PREFIX:-ghcr.io/jareddalessandro/tallyvio}-backend:${IMAGE_TAG:-latest}
+    image: tallyvio-backend
     build: ../backend
     restart: unless-stopped
     # One process on purpose: the price scheduler and the rate limiter live in it. --proxy-headers takes the
@@ -77,7 +76,7 @@ services:
     logging: *logging
 
   web:
-    image: ${IMAGE_PREFIX:-ghcr.io/jareddalessandro/tallyvio}-web:${IMAGE_TAG:-latest}
+    image: tallyvio-web
     build:
       context: ..
       dockerfile: deploy/web.Dockerfile
@@ -98,7 +97,7 @@ services:
     logging: *logging
 
   backup:
-    image: ${IMAGE_PREFIX:-ghcr.io/jareddalessandro/tallyvio}-backup:${IMAGE_TAG:-latest}
+    image: tallyvio-backup
     build: ./backup
     restart: unless-stopped
     environment:
