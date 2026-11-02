@@ -190,7 +190,7 @@ function InviteForm({ target }: { target: AccessTarget }) {
       </Text>
       {sentTo && (
         <Alert variant="light" color="cyan" withCloseButton onClose={() => setSentTo(null)}>
-          Invited {sentTo}. MoneySage doesn't send email, so let them know: they sign in at {window.location.origin} with
+          Invited {sentTo}. Tallyvio doesn't send email, so let them know: they sign in at {window.location.origin} with
           that Google account and accept.
         </Alert>
       )}

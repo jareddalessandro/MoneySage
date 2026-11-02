@@ -225,7 +225,7 @@ def test_database_policies_hide_other_households(client, people):
     other = people.add("other@example.com")
 
     with SessionLocal() as db:
-        assert db.scalar(text("SELECT current_user")) == "moneysage_test_app"
+        assert db.scalar(text("SELECT current_user")) == "tallyvio_test_app"
         # No user set: nothing at all is visible.
         assert db.scalars(select(Category)).all() == []
 

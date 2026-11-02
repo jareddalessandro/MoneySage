@@ -6,7 +6,7 @@ import { useState } from 'react';
 const ERRORS: Record<string, string> = {
   cancelled: 'Sign-in was cancelled.',
   expired: 'That sign-in took too long, or was started in another tab or at another address. Try again.',
-  not_allowed: "This Google account isn't allowed to sign in here. Ask whoever runs this MoneySage to add it.",
+  not_allowed: "This Google account isn't allowed to sign in here. Ask whoever runs this Tallyvio to add it.",
   unverified: "Google hasn't verified this account's email address, so it can't be used here.",
   failed: "Sign-in didn't work. Try again.",
 };

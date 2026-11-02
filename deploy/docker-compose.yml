@@ -1,0 +1,127 @@
+# Tallyvio in production, on one server: Postgres, the backend, Caddy (HTTPS and the built frontend) and
+# nightly backups. Settings and secrets come from deploy/.env (see .env.example and README.md here).
+#
+#   docker compose pull && docker compose up -d      # images built by GitHub Actions
+#   docker compose up -d --build                     # or build on the server (needs 2 GB of memory)
+#
+# Memory limits fit a 1 GB server with swap; on 2 GB they leave plenty of room.
+name: tallyvio
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tallyvio}
+      POSTGRES_USER: ${POSTGRES_USER:-tallyvio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in deploy/.env}
+    # Sized for a small server.
+    command: >-
+      postgres -c shared_buffers=96MB -c effective_cache_size=256MB -c work_mem=4MB
+      -c maintenance_work_mem=48MB -c max_connections=30
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    mem_limit: 384m
+    logging: *logging
+
+  backend:
+    image: ${IMAGE_PREFIX:-ghcr.io/jareddalessandro/tallyvio}-backend:${IMAGE_TAG:-latest}
+    build: ../backend
+    restart: unless-stopped
+    # One process on purpose: the price scheduler and the rate limiter live in it. --proxy-headers takes the
+    # visitor's address from Caddy (the backend isn't reachable from outside the compose network).
+    command: >-
+      sh -c "alembic upgrade head && python -m app.db_role &&
+      exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*' --no-server-header"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tallyvio}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-tallyvio}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Set APP_DB_PASSWORD in deploy/.env}
+      AUTH_MODE: google
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID in deploy/.env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set GOOGLE_CLIENT_SECRET in deploy/.env}
+      PUBLIC_URL: https://${DOMAIN:?Set DOMAIN in deploy/.env}
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-}
+      OPERATOR_NAME: ${OPERATOR_NAME:-}
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      GOVERNING_LAW: ${GOVERNING_LAW:-}
+      PRICE_PROVIDER: ${PRICE_PROVIDER:-yahoo}
+      TIINGO_API_KEY: ${TIINGO_API_KEY:-}
+      PRICE_REFRESH_HOUR: ${PRICE_REFRESH_HOUR:-17}
+      PRICE_REFRESH_MINUTE: ${PRICE_REFRESH_MINUTE:-30}
+      PRICE_REFRESH_TZ: ${PRICE_REFRESH_TZ:-America/New_York}
+      TZ: ${TZ:-America/Phoenix}
+      API_DOCS: "false"
+      HOME: /tmp
+    # Runs as an unprivileged user on a read-only filesystem; only /tmp is writable.
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 512m
+    logging: *logging
+
+  web:
+    image: ${IMAGE_PREFIX:-ghcr.io/jareddalessandro/tallyvio}-web:${IMAGE_TAG:-latest}
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL in deploy/.env}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    mem_limit: 128m
+    logging: *logging
+
+  backup:
+    image: ${IMAGE_PREFIX:-ghcr.io/jareddalessandro/tallyvio}-backup:${IMAGE_TAG:-latest}
+    build: ./backup
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-tallyvio}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-tallyvio}
+      BACKUP_TIME: ${BACKUP_TIME:-02:15}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET:-}
+      BACKUP_S3_PREFIX: ${BACKUP_S3_PREFIX:-tallyvio}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT:-}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      AWS_ACCESS_KEY_ID: ${BACKUP_AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${BACKUP_AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${BACKUP_AWS_REGION:-us-east-1}
+      TZ: ${TZ:-America/Phoenix}
+      HOME: /tmp
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 256m
+    logging: *logging
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

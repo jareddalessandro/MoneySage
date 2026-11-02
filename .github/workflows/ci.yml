@@ -1,0 +1,84 @@
+# Tests on every pull request and push to main; on main, also builds the production images and publishes
+# them to GitHub Container Registry, so the server only pulls them (no building on a small server).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: tallyvio
+          POSTGRES_PASSWORD: tallyvio
+          POSTGRES_DB: tallyvio
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tallyvio" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      - name: Backend tests (row-level security on)
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+psycopg://tallyvio:tallyvio@localhost:5432/tallyvio
+        run: python -m pytest -q
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend type check and build
+        working-directory: frontend
+        run: npm ci && npm run build
+
+  images:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            context: backend
+            file: backend/Dockerfile
+          - name: web
+            context: .
+            file: deploy/web.Dockerfile
+          - name: backup
+            context: deploy/backup
+            file: deploy/backup/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/tallyvio-${{ matrix.name }}:latest
+            ghcr.io/${{ github.repository_owner }}/tallyvio-${{ matrix.name }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

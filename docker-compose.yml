@@ -1,13 +1,13 @@
-name: moneysage
+name: tallyvio
 
 services:
   db:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-moneysage}
-      POSTGRES_USER: ${POSTGRES_USER:-moneysage}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-moneysage}
+      POSTGRES_DB: ${POSTGRES_DB:-tallyvio}
+      POSTGRES_USER: ${POSTGRES_USER:-tallyvio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tallyvio}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
@@ -23,7 +23,7 @@ services:
     build: ./backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-moneysage}:${POSTGRES_PASSWORD:-moneysage}@db:5432/${POSTGRES_DB:-moneysage}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tallyvio}:${POSTGRES_PASSWORD:-tallyvio}@db:5432/${POSTGRES_DB:-tallyvio}
       AUTH_MODE: ${AUTH_MODE:-none}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
@@ -33,6 +33,8 @@ services:
       OPERATOR_NAME: ${OPERATOR_NAME:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
       GOVERNING_LAW: ${GOVERNING_LAW:-}
+      PRICE_PROVIDER: ${PRICE_PROVIDER:-yahoo}
+      TIINGO_API_KEY: ${TIINGO_API_KEY:-}
       PRICE_REFRESH_HOUR: ${PRICE_REFRESH_HOUR:-17}
       PRICE_REFRESH_MINUTE: ${PRICE_REFRESH_MINUTE:-30}
       PRICE_REFRESH_TZ: ${PRICE_REFRESH_TZ:-America/New_York}

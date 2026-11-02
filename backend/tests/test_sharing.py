@@ -60,7 +60,7 @@ def test_share_the_household_with_a_spouse(client, people, accounts_on):
     # The owner sees them as a member, and the invite is gone.
     people.act_as(None)
     listed = client.get("/api/household/access").json()
-    assert [(p["email"], p["role"]) for p in listed["people"]] == [("local@moneysage.invalid", "owner"), ("spouse@example.com", "editor")]
+    assert [(p["email"], p["role"]) for p in listed["people"]] == [("local@tallyvio.invalid", "owner"), ("spouse@example.com", "editor")]
     assert listed["invites"] == []
 
 
@@ -155,7 +155,7 @@ def test_declining_and_revoking(client, people, accounts_on):
 def test_invite_checks(client, people, accounts_on):
     assert invite(client, "not an email").status_code == 422
     assert client.post("/api/household/access/invites", json={"email": "a@b.co", "role": "owner"}).status_code == 422
-    assert invite(client, "local@moneysage.invalid").status_code == 400  # yourself
+    assert invite(client, "local@tallyvio.invalid").status_code == 400  # yourself
     assert invite(client, "spouse@example.com").status_code == 201
     assert invite(client, "spouse@example.com", role="viewer").status_code == 409
     spouse = people.add("spouse@example.com")

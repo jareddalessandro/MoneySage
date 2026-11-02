@@ -93,9 +93,9 @@ def test_export_and_import_round_trip(client, people, accounts, category_id):  #
     before = snapshot(client, cid)
     exported = client.get("/api/export")
     assert exported.status_code == 200
-    assert exported.headers["content-disposition"].startswith('attachment; filename="moneysage-export-')
+    assert exported.headers["content-disposition"].startswith('attachment; filename="tallyvio-export-')
     data = exported.json()
-    assert data["format"] == "moneysage-export" and data["version"] == 1
+    assert data["format"] == "tallyvio-export" and data["version"] == 1
     assert len(data["companies"]) == 1
 
     newcomer = people.add("new@example.com")
@@ -150,8 +150,14 @@ def test_rejects_bad_files(client, people):
     exported = client.get("/api/export").json()
     people.act_as(people.add("new@example.com"))
 
-    assert import_file(client, b"not json").json()["detail"] == "That isn't a MoneySage export file"
+    assert import_file(client, b"not json").json()["detail"] == "That isn't a Tallyvio export file"
     assert import_file(client, json.dumps({"format": "other", "version": 1}).encode()).status_code == 400
+
+    # Files from before the rename still import.
+    legacy = json.loads(json.dumps(exported))
+    legacy["format"] = "moneysage-export"
+    legacy["household"] = None
+    assert import_file(client, json.dumps(legacy).encode()).status_code == 200
 
     broken = json.loads(json.dumps(exported))
     broken["household"]["transactions"] = [{

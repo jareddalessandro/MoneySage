@@ -369,7 +369,7 @@ def render_pdf(st: Statements) -> bytes:
         k.p("Financial statements", k.subtitle),
         k.p(st.period_label, k.subtitle),
         Spacer(1, 4),
-        k.p(f"Prepared {_long_date(st.generated)} from the company's records in MoneySage. Cash basis; unaudited.",
+        k.p(f"Prepared {_long_date(st.generated)} from the company's records in Tallyvio. Cash basis; unaudited.",
             k.small),
     ]
 
@@ -542,7 +542,7 @@ def render_pdf(st: Statements) -> bytes:
 
 def render_xlsx(st: Statements) -> bytes:
     k = XlsxKit(st.company_name, st.period_label,
-                f"Prepared {_long_date(st.generated)} from MoneySage records. Cash basis; unaudited.")
+                f"Prepared {_long_date(st.generated)} from Tallyvio records. Cash basis; unaudited.")
     put = k.put
 
     # Income statement: totals are formulas over their section's lines.

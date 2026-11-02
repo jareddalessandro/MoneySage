@@ -61,7 +61,7 @@ type Sort = { key: SortKey; dir: SortDir };
 type Sorts = Record<CategoryKind, Sort>;
 
 const DEFAULT_SORTS: Sorts = { income: { key: 'name', dir: 'asc' }, expense: { key: 'name', dir: 'asc' } };
-const SORT_STORAGE_KEY = 'moneysage.budget-sort';
+const SORT_STORAGE_KEY = 'tallyvio.budget-sort';
 
 // The chosen sort is a per-browser convenience; storage can be unavailable, so fall back quietly.
 function loadSorts(): Sorts {

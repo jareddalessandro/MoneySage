@@ -1,0 +1,49 @@
+# Tallyvio in production: HTTPS (certificates from Let's Encrypt, renewed automatically), the built
+# frontend, and /api proxied to the backend. DOMAIN and ACME_EMAIL come from deploy/.env.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Export files and statement PDFs are the largest uploads (the backend allows 50 MB).
+	request_body {
+		max_size 60MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		# Mantine sets inline styles, hence 'unsafe-inline' for styles only. Google profile pictures are
+		# the one outside image source. Scripts come only from this site.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://lh3.googleusercontent.com; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		-Server
+	}
+
+	handle /api/* {
+		# Financial data: never kept in browser or proxy caches.
+		header Cache-Control "no-store"
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		root * /srv
+		# Built assets have content hashes in their names, so they can be cached forever; the page itself
+		# is always checked so a new release shows up right away.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@page not path /assets/*
+		header @page Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}

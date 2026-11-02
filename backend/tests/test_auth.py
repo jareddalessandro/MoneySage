@@ -90,7 +90,7 @@ def test_login_sends_the_browser_to_google(client, google):
     assert query["client_id"] == [CLIENT_ID]
     assert query["redirect_uri"] == ["http://testserver/api/auth/callback"]
     assert query["code_challenge_method"] == ["S256"] and query["scope"] == ["openid email profile"]
-    cookie = response.cookies["moneysage_oauth"]
+    cookie = response.cookies["tallyvio_oauth"]
     assert cookie.startswith(query["state"][0] + ".")
     assert "HttpOnly" in response.headers["set-cookie"] and "samesite=lax" in response.headers["set-cookie"].lower()
 
@@ -98,7 +98,7 @@ def test_login_sends_the_browser_to_google(client, google):
 def test_first_sign_in_creates_an_account_with_its_own_household(client, google):
     response = sign_in(client, google)
     assert response.status_code == 303 and response.headers["location"] == "/"
-    assert "moneysage_session" in client.cookies
+    assert "tallyvio_session" in client.cookies
     # The code went to Google with the PKCE verifier.
     assert google.token_requests[-1]["code_verifier"] and google.token_requests[-1]["code"] == "abc"
 
@@ -142,7 +142,7 @@ def test_bad_id_tokens_are_refused(client, google, claims, error):
     google.claims = claims
     response = sign_in(client, google)
     assert response.headers["location"] == f"/?auth_error={error}"
-    assert "moneysage_session" not in client.cookies
+    assert "tallyvio_session" not in client.cookies
     with system_session() as db:
         assert db.query(User).filter(User.is_local.is_(False)).count() == 0
 
@@ -175,13 +175,13 @@ def test_allowed_emails(client, google, monkeypatch):
 
 def test_sign_out_and_expiry(client, google):
     sign_in(client, google)
-    token = client.cookies["moneysage_session"]
+    token = client.cookies["tallyvio_session"]
     with system_session() as db:
         stored = db.query(AuthSession).one()
         assert stored.id != token  # only a hash is stored
 
     assert client.post("/api/auth/logout").status_code == 204
-    client.cookies.set("moneysage_session", token)
+    client.cookies.set("tallyvio_session", token)
     assert client.get("/api/me").status_code == 401
 
     sign_in(client, google)
@@ -197,7 +197,7 @@ def test_an_idle_session_is_extended(client, google):
         db.query(AuthSession).update({"last_seen_at": datetime.now(UTC) - timedelta(hours=2)})
         db.commit()
     response = client.get("/api/me")
-    assert "moneysage_session=" in response.headers["set-cookie"]
+    assert "tallyvio_session=" in response.headers["set-cookie"]
     with system_session() as db:
         assert db.query(AuthSession).one().expires_at > datetime.now(UTC) + timedelta(days=29)
 
@@ -207,8 +207,8 @@ def test_secure_cookie_on_https(client, google, monkeypatch):
     client.base_url = "https://testserver"  # browsers only send Secure cookies over https
     response = sign_in(client, google)
     assert response.headers["location"] == "/"
-    cookie = next(c for c in response.headers.get_list("set-cookie") if "moneysage_session" in c)
-    assert cookie.startswith("__Host-moneysage_session=") and "Secure" in cookie and "Path=/" in cookie
+    cookie = next(c for c in response.headers.get_list("set-cookie") if "tallyvio_session" in c)
+    assert cookie.startswith("__Host-tallyvio_session=") and "Secure" in cookie and "Path=/" in cookie
     assert client.get("/api/me").status_code == 200
 
 

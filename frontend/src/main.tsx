@@ -24,6 +24,18 @@ const queryClient = new QueryClient({
   },
 });
 
+// Preferences saved before the app was renamed (moneysage.*) carry over to the new keys (tallyvio.*).
+try {
+  for (const key of Object.keys(localStorage)) {
+    if (!key.startsWith('moneysage.')) continue;
+    const renamed = `tallyvio.${key.slice('moneysage.'.length)}`;
+    if (localStorage.getItem(renamed) === null) localStorage.setItem(renamed, localStorage.getItem(key)!);
+    localStorage.removeItem(key);
+  }
+} catch {
+  // storage unavailable: nothing to carry over
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} forceColorScheme="dark">

@@ -32,27 +32,27 @@ def _owned_companies(ctx: HouseholdCtx) -> list[Company]:
 
 @router.get("/export")
 def export_everything(ctx: HouseholdDep):
-    """This household and every company you own, in one file (for moving to another MoneySage, or a copy)."""
+    """This household and every company you own, in one file (for moving to another Tallyvio, or a copy)."""
     file = build_export(ctx.db, ctx.household, _owned_companies(ctx))
-    return _download(file, f"moneysage-export-{ctx.today().isoformat()}.json")
+    return _download(file, f"tallyvio-export-{ctx.today().isoformat()}.json")
 
 
 @router.get("/export/household")
 def export_household(ctx: HouseholdDep):
     file = build_export(ctx.db, ctx.household, [])
-    return _download(file, f"moneysage-household-{ctx.today().isoformat()}.json")
+    return _download(file, f"tallyvio-household-{ctx.today().isoformat()}.json")
 
 
 @router.get("/companies/{company_id}/export")
 def export_company(company_id: int, ctx: CompanyDep):
     file = build_export(ctx.db, None, [ctx.company])
     safe = "".join(ch if ch.isalnum() else "-" for ch in ctx.company.name).strip("-") or "company"
-    return _download(file, f"moneysage-{safe}.json")
+    return _download(file, f"tallyvio-{safe}.json")
 
 
 @router.post("/import", response_model=ImportResult)
 async def import_export(ctx: HouseholdDep, file: UploadFile = File(...)):
-    """Import a MoneySage export: its household into this one (which must be empty; owners only), and each
+    """Import a Tallyvio export: its household into this one (which must be empty; owners only), and each
     of its companies as a new company you own. All or nothing."""
     data = await file.read(MAX_BYTES + 1)
     if len(data) > MAX_BYTES:
@@ -62,7 +62,7 @@ async def import_export(ctx: HouseholdDep, file: UploadFile = File(...)):
     except ValidationError as exc:
         first = exc.errors()[0]
         if first["loc"][:1] in (("format",), ("version",)) or first["type"] == "json_invalid":
-            raise HTTPException(400, "That isn't a MoneySage export file")
+            raise HTTPException(400, "That isn't a Tallyvio export file")
         where = " → ".join(str(p) for p in first["loc"])
         raise HTTPException(400, f"The file has a problem at {where}: {first['msg']}")
     household = ctx.household if ctx.role == AccessRole.owner else None

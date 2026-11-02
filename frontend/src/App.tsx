@@ -289,7 +289,7 @@ function UserRow({ user }: { user: Me['user'] }) {
 function Logo() {
   return (
     <Text className="headline" fw={800} size="lg" lts="-0.01em">
-      💰 MoneySage
+      💰 Tallyvio
     </Text>
   );
 }

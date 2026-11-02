@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 import type { Site } from '../types';
 import { SiteFooter } from './Landing';
 
-// Drafts written for how MoneySage actually works. They aren't legal advice: have them reviewed before
+// Drafts written for how Tallyvio actually works. They aren't legal advice: have them reviewed before
 // opening sign-ups. When they change in a way people should agree to again, bump TERMS_VERSION in
 // backend/app/legal.py (its date is the "last updated" shown here).
 
@@ -30,7 +30,7 @@ function LegalLayout({ title, site, signedIn, children }: { title: string; site:
           {!signedIn && (
             <Anchor component={Link} to="/" size="sm" className="hit-44">
               <Group gap={4}>
-                <IconArrowLeft size={14} /> MoneySage
+                <IconArrowLeft size={14} /> Tallyvio
               </Group>
             </Anchor>
           )}
@@ -84,9 +84,9 @@ export function PrivacyPage({ site, signedIn = false }: { site: Site | undefined
   return (
     <LegalLayout title="Privacy Policy" site={site} signedIn={signedIn}>
       <P>
-        MoneySage is a personal and family finance tracker run by {who(site)} ("we"). This policy explains what we
+        Tallyvio is a personal and family finance tracker run by {who(site)} ("we"). This policy explains what we
         collect, why, who can see it, and the choices you have. The short version: your data is used to run
-        MoneySage for you and the people you share with, and for nothing else. We don't sell it and we don't show
+        Tallyvio for you and the people you share with, and for nothing else. We don't sell it and we don't show
         ads.
       </P>
 
@@ -97,7 +97,7 @@ export function PrivacyPage({ site, signedIn = false }: { site: Site | undefined
           and Google's account ID. We never see your Google password.
         </List.Item>
         <List.Item>
-          <b>What you put in MoneySage</b>: budgets, transactions, account balances, investment holdings, credit
+          <b>What you put in Tallyvio</b>: budgets, transactions, account balances, investment holdings, credit
           card reference details, company records, notes and categories.
         </List.Item>
         <List.Item>
@@ -113,16 +113,16 @@ export function PrivacyPage({ site, signedIn = false }: { site: Site | undefined
         </List.Item>
       </Items>
       <P>
-        MoneySage never asks for bank logins and never connects to your bank. Please don't enter card numbers,
+        Tallyvio never asks for bank logins and never connects to your bank. Please don't enter card numbers,
         security codes, account passwords or government ID numbers anywhere in it.
       </P>
 
       <H>How we use it</H>
       <Items>
-        <List.Item>To provide MoneySage: show your finances, compute totals, refresh investment prices, and produce the statements and exports you ask for.</List.Item>
+        <List.Item>To provide Tallyvio: show your finances, compute totals, refresh investment prices, and produce the statements and exports you ask for.</List.Item>
         <List.Item>To let the people you invite see or edit what you've shared with them.</List.Item>
         <List.Item>To keep the service secure: prevent abuse, investigate problems, and protect accounts.</List.Item>
-        <List.Item>To contact you about your account or important changes to MoneySage.</List.Item>
+        <List.Item>To contact you about your account or important changes to Tallyvio.</List.Item>
       </Items>
       <P>
         We don't sell your personal information, share it for advertising, use it to build marketing profiles, or
@@ -136,7 +136,7 @@ export function PrivacyPage({ site, signedIn = false }: { site: Site | undefined
           their owner, and only with the people the owner invites, as editors or view-only.
         </List.Item>
         <List.Item>
-          <b>Service providers that run MoneySage for us</b>, only as needed to do so: our hosting provider (servers
+          <b>Service providers that run Tallyvio for us</b>, only as needed to do so: our hosting provider (servers
           and storage in the United States), Google (to sign you in), and a market data provider, which receives
           the ticker symbols being priced but not who holds them.
         </List.Item>
@@ -145,12 +145,12 @@ export function PrivacyPage({ site, signedIn = false }: { site: Site | undefined
           users or others.
         </List.Item>
         <List.Item>
-          <b>If MoneySage changes hands</b>, your data would move with it under this policy, and we'd tell you
+          <b>If Tallyvio changes hands</b>, your data would move with it under this policy, and we'd tell you
           first.
         </List.Item>
       </Items>
       <P>
-        MoneySage's use of information received from Google APIs adheres to the{' '}
+        Tallyvio's use of information received from Google APIs adheres to the{' '}
         <Anchor href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer">
           Google API Services User Data Policy
         </Anchor>
@@ -159,7 +159,7 @@ export function PrivacyPage({ site, signedIn = false }: { site: Site | undefined
 
       <H>Cookies</H>
       <P>
-        MoneySage uses two cookies, both needed for sign-in: a short-lived one while you sign in with Google, and
+        Tallyvio uses two cookies, both needed for sign-in: a short-lived one while you sign in with Google, and
         one that keeps you signed in. There are no advertising or analytics cookies and no third-party trackers.
       </P>
 
@@ -197,12 +197,12 @@ export function PrivacyPage({ site, signedIn = false }: { site: Site | undefined
       </Items>
 
       <H>Children</H>
-      <P>MoneySage is for adults. It isn't meant for anyone under 18, and we don't knowingly collect children's information.</P>
+      <P>Tallyvio is for adults. It isn't meant for anyone under 18, and we don't knowingly collect children's information.</P>
 
       <H>Changes</H>
       <P>
         If we change this policy in a way that matters, we'll update the date above and ask you to review and agree
-        to it the next time you use MoneySage.
+        to it the next time you use Tallyvio.
       </P>
 
       <H>Contact</H>
@@ -217,15 +217,15 @@ export function TermsPage({ site, signedIn = false }: { site: Site | undefined; 
   return (
     <LegalLayout title="Terms of Service" site={site} signedIn={signedIn}>
       <P>
-        These terms are an agreement between you and {who(site)} ("we") about your use of MoneySage. By creating an
-        account or using MoneySage, you agree to them and to the{' '}
+        These terms are an agreement between you and {who(site)} ("we") about your use of Tallyvio. By creating an
+        account or using Tallyvio, you agree to them and to the{' '}
         <Anchor component={Link} to="/privacy">
           Privacy Policy
         </Anchor>
         .
       </P>
 
-      <H>1. Who can use MoneySage</H>
+      <H>1. Who can use Tallyvio</H>
       <P>You must be at least 18 and able to agree to these terms. Each account is for one person.</P>
 
       <H>2. Your account</H>
@@ -236,8 +236,8 @@ export function TermsPage({ site, signedIn = false }: { site: Site | undefined; 
 
       <H>3. Your data</H>
       <P>
-        What you put into MoneySage stays yours. You give us permission to store, process and display it only as
-        needed to run MoneySage for you and the people you share with. You can export it at any time. Keep your own
+        What you put into Tallyvio stays yours. You give us permission to store, process and display it only as
+        needed to run Tallyvio for you and the people you share with. You can export it at any time. Keep your own
         exports of anything you can't afford to lose: we work to protect your data but can't guarantee it will never
         be lost.
       </P>
@@ -251,15 +251,15 @@ export function TermsPage({ site, signedIn = false }: { site: Site | undefined; 
 
       <H>5. Acceptable use</H>
       <Items>
-        <List.Item>Don't break the law with MoneySage, or use it to store other people's information without their permission.</List.Item>
+        <List.Item>Don't break the law with Tallyvio, or use it to store other people's information without their permission.</List.Item>
         <List.Item>Don't enter card numbers, security codes, passwords or government ID numbers.</List.Item>
         <List.Item>Don't try to get into other people's data, probe or overload the service, or get around its limits or security.</List.Item>
-        <List.Item>Don't copy, resell or scrape MoneySage, or use it to build a competing service.</List.Item>
+        <List.Item>Don't copy, resell or scrape Tallyvio, or use it to build a competing service.</List.Item>
       </Items>
 
       <H>6. Not financial advice</H>
       <P>
-        MoneySage is a record-keeping tool. It isn't a bank, doesn't hold or move money, and doesn't give financial,
+        Tallyvio is a record-keeping tool. It isn't a bank, doesn't hold or move money, and doesn't give financial,
         investment, tax or legal advice. Figures can be wrong or out of date: investment prices come from
         third-party sources and may be delayed or inaccurate, and transactions read from statements may be misread.
         Check anything important against your bank and brokerage records, and talk to a qualified professional
@@ -268,25 +268,25 @@ export function TermsPage({ site, signedIn = false }: { site: Site | undefined; 
 
       <H>7. Price</H>
       <P>
-        MoneySage is free during early access. We may introduce paid plans later. We'll tell you before anything
+        Tallyvio is free during early access. We may introduce paid plans later. We'll tell you before anything
         you use starts to cost money, and you won't be charged unless you choose a paid plan.
       </P>
 
       <H>8. Changes and availability</H>
       <P>
-        We may change, add or remove features, and MoneySage may sometimes be unavailable. If we shut MoneySage down,
+        We may change, add or remove features, and Tallyvio may sometimes be unavailable. If we shut Tallyvio down,
         we'll give you reasonable notice and time to export your data.
       </P>
 
       <H>9. Ending your use</H>
       <P>
-        You can stop using MoneySage and ask us to delete your account at any time. We may suspend or close accounts
+        You can stop using Tallyvio and ask us to delete your account at any time. We may suspend or close accounts
         that break these terms or put the service or other people at risk, with notice where we reasonably can.
       </P>
 
       <H>10. Disclaimers</H>
       <P>
-        MoneySage is provided "as is" and "as available", without warranties of any kind, express or implied,
+        Tallyvio is provided "as is" and "as available", without warranties of any kind, express or implied,
         including fitness for a particular purpose, accuracy, and uninterrupted or error-free operation, to the
         fullest extent the law allows.
       </P>
@@ -294,8 +294,8 @@ export function TermsPage({ site, signedIn = false }: { site: Site | undefined; 
       <H>11. Limitation of liability</H>
       <P>
         To the fullest extent the law allows, we aren't liable for indirect, incidental, special, consequential or
-        punitive damages, or for lost profits, data or financial losses arising from your use of MoneySage or
-        decisions made with it. Our total liability for any claim about MoneySage is limited to the greater of what
+        punitive damages, or for lost profits, data or financial losses arising from your use of Tallyvio or
+        decisions made with it. Our total liability for any claim about Tallyvio is limited to the greater of what
         you paid us in the 12 months before the claim or US$50. Some places don't allow these limits, so they may
         not all apply to you.
       </P>
@@ -309,7 +309,7 @@ export function TermsPage({ site, signedIn = false }: { site: Site | undefined; 
       <H>13. Changes to these terms</H>
       <P>
         If we change these terms in a way that matters, we'll update the date above and ask you to agree to the new
-        version before you continue using MoneySage.
+        version before you continue using Tallyvio.
       </P>
 
       <H>14. Contact</H>
