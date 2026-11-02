@@ -25,6 +25,7 @@ import type {
   Holding,
   ImportResult,
   HoldingInput,
+  InvestmentTransaction,
   Me,
   MyInvite,
   Site,
@@ -205,6 +206,8 @@ export const api = {
   deleteHolding: (id: number) => request<void>('DELETE', `/holdings/${id}`),
   /** Returns the updated holding, or null when a sale removed all of it. */
   tradeHolding: (id: number, body: TradeInput) => request<Holding | null>('POST', `/holdings/${id}/trade`, body),
+  investmentTransactions: () => get<InvestmentTransaction[]>('/investment-transactions'),
+  deleteInvestmentTransaction: (id: number) => request<void>('DELETE', `/investment-transactions/${id}`),
   portfolioSummary: () => get<PortfolioSummary>('/portfolio/summary'),
   portfolioHistory: (days: number) => get<PortfolioPoint[]>(`/portfolio/history${qs({ days })}`),
   refreshPrices: () => request<RefreshRun>('POST', '/prices/refresh'),

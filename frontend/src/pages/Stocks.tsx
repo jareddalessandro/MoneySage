@@ -4,22 +4,26 @@ import {
   Alert,
   Anchor,
   Badge,
+  Box,
   Button,
   Grid,
   Group,
   Modal,
   NumberInput,
+  Pagination,
   Progress,
   SegmentedControl,
   Select,
   SimpleGrid,
   Stack,
+  Switch,
   Table,
   Text,
   Textarea,
   TextInput,
   Tooltip,
 } from '@mantine/core';
+import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import {
   IconAlertTriangle,
@@ -53,8 +57,16 @@ import {
   useAppMutation,
   type SortDir,
 } from '../components/common';
-import { dateLabel, money, moneyCompact, percent, quantity, signedPercent } from '../format';
-import type { AssetType, Holding, HoldingInput, PortfolioPoint, TradeInput } from '../types';
+import { dateLabel, money, moneyCompact, percent, quantity, signedMoney, signedPercent } from '../format';
+import type {
+  AssetType,
+  Holding,
+  HoldingInput,
+  InvestmentTransaction,
+  InvestmentTxnKind,
+  PortfolioPoint,
+  TradeInput,
+} from '../types';
 
 const ASSET_LABELS: Record<AssetType, string> = { stock: 'Stock', etf: 'ETF', crypto: 'Crypto', cash: 'Cash' };
 const RANGES = ['1M', '3M', '6M', 'YTD', '1Y'] as const;
@@ -122,6 +134,7 @@ export default function StocksPage() {
   const { data: holdings = [], isLoading } = useQuery({ queryKey: ['holdings'], queryFn: api.holdings });
   const { data: summary } = useQuery({ queryKey: ['portfolio-summary'], queryFn: api.portfolioSummary });
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => api.accounts() });
+  const { data: ledger = [] } = useQuery({ queryKey: ['investment-transactions'], queryFn: api.investmentTransactions });
   // ?account=<id> (or 'unassigned') narrows the holdings table to one account. Set by the selector above
   // the table and by the "From Investments" link on the Balance Sheet. Without it, all accounts show combined.
   const [params, setParams] = useSearchParams();
@@ -461,6 +474,20 @@ export default function StocksPage() {
             </Grid.Col>
           </Grid>
         )}
+
+        {(holdings.length > 0 || ledger.length > 0) && (
+          <SectionCard title="Ledger">
+            <Ledger
+              key={accountParam ?? ''}
+              entries={
+                accountFilter == null
+                  ? ledger
+                  : ledger.filter((t) => (accountFilter === UNASSIGNED ? t.account_id == null : t.account_id === accountFilter))
+              }
+              filtered={accountFilter != null}
+            />
+          </SectionCard>
+        )}
       </Stack>
 
       <Modal opened={editing !== null} onClose={() => setEditing(null)} title={editing?.holding ? 'Edit holding' : 'Add holding'}>
@@ -792,6 +819,198 @@ function HoldingsBody({
   );
 }
 
+/**
+ * Dot color per ledger entry type. Buy and sell match the paired --series-1/--series-2; the dot always
+ * sits beside the type's name, so color never carries it alone.
+ */
+const LEDGER_KINDS: Record<InvestmentTxnKind, { label: string; color: string }> = {
+  buy: { label: 'Buy', color: 'var(--series-1)' },
+  sell: { label: 'Sell', color: 'var(--series-2)' },
+  deposit: { label: 'Deposit', color: 'var(--cat-green)' },
+  withdraw: { label: 'Withdraw', color: 'var(--cat-pink)' },
+  add: { label: 'Added', color: 'var(--cat-gray)' },
+};
+const LEDGER_PAGE_SIZE = 15;
+
+function LedgerKindBadge({ kind }: { kind: InvestmentTxnKind }) {
+  return (
+    <Badge
+      size="sm"
+      variant="light"
+      color="gray"
+      leftSection={<Box w={7} h={7} style={{ borderRadius: '50%', background: LEDGER_KINDS[kind].color }} aria-hidden />}
+    >
+      {LEDGER_KINDS[kind].label}
+    </Badge>
+  );
+}
+
+/** "+$520.00 to cash" / "−$750.30 from cash" */
+const cashLabel = (change: number) => `${signedMoney(change)} ${change < 0 ? 'from' : 'to'} cash`;
+
+/** Every recorded buy, sell, deposit and withdrawal, newest first. Deleting an entry only removes the record. */
+function Ledger({ entries, filtered }: { entries: InvestmentTransaction[]; filtered: boolean }) {
+  const [page, setPage] = useState(1);
+  const remove = useAppMutation((id: number) => api.deleteInvestmentTransaction(id), 'Ledger entry deleted');
+  const pages = Math.max(1, Math.ceil(entries.length / LEDGER_PAGE_SIZE));
+  const current = Math.min(page, pages);
+  const first = (current - 1) * LEDGER_PAGE_SIZE;
+  const shown = entries.slice(first, first + LEDGER_PAGE_SIZE);
+  const sales = entries.filter((t) => t.realized_gain != null);
+  const realized = sales.reduce((s, t) => s + (t.realized_gain ?? 0), 0);
+
+  if (entries.length === 0) {
+    return (
+      <EmptyState
+        message={
+          filtered
+            ? 'Nothing recorded for this account yet.'
+            : 'Buys, sells, deposits and withdrawals show up here as you record them (use Buy or sell on a holding).'
+        }
+      />
+    );
+  }
+  const describe = (t: InvestmentTransaction) =>
+    t.asset_type === 'cash' ? null : `${quantity(t.quantity)}${t.price != null ? ` @ ${money(t.price)}` : ''}`;
+
+  return (
+    <>
+      <Table.ScrollContainer minWidth={900} className="phone-fit">
+        <Table highlightOnHover verticalSpacing="xs">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th className="hide-xs">Date</Table.Th>
+              <Table.Th className="hide-xs">Type</Table.Th>
+              <Table.Th>Holding</Table.Th>
+              <Table.Th className="hide-xs">Account</Table.Th>
+              <Table.Th ta="right" className="hide-xs">
+                Quantity
+              </Table.Th>
+              <Table.Th ta="right" className="hide-xs">
+                Price
+              </Table.Th>
+              <Table.Th ta="right">Amount</Table.Th>
+              <Table.Th ta="right" className="hide-xs">
+                Cash
+              </Table.Th>
+              <Table.Th ta="right" className="hide-xs">
+                Realized gain
+              </Table.Th>
+              <Table.Th w={60} />
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {shown.map((t) => (
+              <Table.Tr key={t.id}>
+                <Table.Td className="hide-xs num" style={{ whiteSpace: 'nowrap' }}>
+                  {dateLabel(t.date)}
+                </Table.Td>
+                <Table.Td className="hide-xs">
+                  <LedgerKindBadge kind={t.kind} />
+                </Table.Td>
+                <Table.Td>
+                  <TickerLabel ticker={t.ticker} asset_type={t.asset_type} />
+                  {/* Phones hide the other columns; these lines stand in for them. */}
+                  <Group gap={6} mt={2} className="show-xs" wrap="nowrap">
+                    <LedgerKindBadge kind={t.kind} />
+                    <Text size="xs" c="dimmed" className="num">
+                      {dayjs(t.date).format('MMM D')}
+                    </Text>
+                  </Group>
+                  <Text size="xs" c="dimmed" className="show-xs num">
+                    {[describe(t), t.account_name ?? 'No account', t.cash_change != null ? cashLabel(t.cash_change) : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Text>
+                </Table.Td>
+                <Table.Td className="hide-xs">
+                  <Text size="sm" c={t.account_name ? undefined : 'dimmed'}>
+                    {t.account_name ?? 'No account'}
+                  </Text>
+                </Table.Td>
+                <Table.Td ta="right" className="num hide-xs">
+                  {t.asset_type === 'cash' ? '—' : quantity(t.quantity)}
+                </Table.Td>
+                <Table.Td ta="right" className="num hide-xs">
+                  {t.price != null ? money(t.price) : '—'}
+                </Table.Td>
+                <Table.Td ta="right" className="num" fw={500} style={{ whiteSpace: 'nowrap' }}>
+                  {t.amount != null ? money(t.amount) : '—'}
+                </Table.Td>
+                <Table.Td ta="right" className="num hide-xs" style={{ whiteSpace: 'nowrap' }}>
+                  {t.cash_change != null ? (
+                    cashLabel(t.cash_change)
+                  ) : (
+                    <Text span size="sm" c="dimmed">
+                      —
+                    </Text>
+                  )}
+                </Table.Td>
+                <Table.Td ta="right" className="hide-xs">
+                  {t.realized_gain != null ? (
+                    <Group justify="flex-end">
+                      <Delta value={t.realized_gain} />
+                    </Group>
+                  ) : (
+                    <Text span size="sm" c="dimmed">
+                      —
+                    </Text>
+                  )}
+                </Table.Td>
+                <Table.Td>
+                  <RowActions
+                    label={`Actions for this ${LEDGER_KINDS[t.kind].label.toLowerCase()}`}
+                    actions={[
+                      {
+                        label: 'Delete',
+                        icon: <IconTrash size={16} />,
+                        color: 'red',
+                        onClick: () =>
+                          confirmDelete(
+                            'this ledger entry',
+                            () => remove.mutate(t.id),
+                            'This removes the record only. Your holdings and cash stay as they are.',
+                          ),
+                      },
+                    ]}
+                  />
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+      <Group justify="space-between" mt="xs" gap="xs">
+        {sales.length > 0 ? (
+          <Group gap={6}>
+            <Text size="sm" c="dimmed">
+              Realized gain{filtered ? ' in this account' : ''}:
+            </Text>
+            <Delta value={realized} />
+            <Text size="sm" c="dimmed">
+              from {sales.length} {sales.length === 1 ? 'sale' : 'sales'}
+            </Text>
+          </Group>
+        ) : (
+          <span />
+        )}
+        {pages > 1 && (
+          <Group gap="xs">
+            <Text size="xs" c="dimmed" className="num">
+              {first + 1}–{first + shown.length} of {entries.length}
+            </Text>
+            <Pagination size="sm" total={pages} value={current} onChange={setPage} />
+          </Group>
+        )}
+      </Group>
+    </>
+  );
+}
+
+/** The account's cash holding, if it has one. */
+const cashIn = (holdings: Holding[], accountId: number | null) =>
+  accountId == null ? undefined : holdings.find((h) => h.asset_type === 'cash' && h.account_id === accountId);
+
 /** Same rule as the server's normalize_ticker: uppercase, and BTC means BTC-USD. */
 const normalizeTicker = (ticker: string, type: AssetType) => {
   const t = ticker.trim().toUpperCase();
@@ -828,6 +1047,7 @@ function HoldingForm({ holding, onDone }: { holding: Holding | null; onDone: () 
       cost_per_unit: holding?.cost_per_unit ?? ('' as number | ''),
       account_id: holding?.account_id == null ? null : String(holding.account_id),
       notes: holding?.notes ?? '',
+      pay_from_cash: false,
     },
     validate: {
       ticker: (v, values) => (values.asset_type === 'cash' || v.trim() ? null : 'Required'),
@@ -853,6 +1073,12 @@ function HoldingForm({ holding, onDone }: { holding: Holding | null; onDone: () 
   const price = typeof form.values.cost_per_unit === 'number' ? form.values.cost_per_unit : null;
   const merged = existing && qty ? afterBuy(existing, qty, price) : null;
   const where = existing?.account_name ?? 'Unassigned';
+  // A new holding can be paid for from the account's cash (then it's a buy in the ledger).
+  const canPayFromCash = !holding && !isCash && selected != null;
+  const payFromCash = canPayFromCash && form.values.pay_from_cash;
+  const cashHeld = cashIn(holdings, accountId)?.quantity ?? 0;
+  const cost = qty != null && price != null ? Math.round(qty * price * 100) / 100 : null;
+  const shortOfCash = payFromCash && cost != null && cost > cashHeld;
 
   const save = useAppMutation(
     (body: HoldingInput) => (holding ? api.updateHolding(holding.id, body) : api.createHolding(body)),
@@ -866,6 +1092,10 @@ function HoldingForm({ holding, onDone }: { holding: Holding | null; onDone: () 
           form.setFieldError('cost_per_unit', 'Enter the price paid, so the average cost stays accurate');
           return;
         }
+        if (payFromCash && price == null) {
+          form.setFieldError('cost_per_unit', "Enter the price paid, so it can come out of the account's cash");
+          return;
+        }
         save.mutate(
           {
             ticker: isCash ? '' : v.ticker.trim().toUpperCase(),
@@ -874,6 +1104,7 @@ function HoldingForm({ holding, onDone }: { holding: Holding | null; onDone: () 
             cost_per_unit: isCash || v.cost_per_unit === '' ? null : v.cost_per_unit,
             account_id: v.account_id == null ? null : Number(v.account_id),
             notes: v.notes.trim() || null,
+            ...(holding ? {} : { pay_from_cash: payFromCash }),
           },
           { onSuccess: onDone },
         );
@@ -954,6 +1185,18 @@ function HoldingForm({ holding, onDone }: { holding: Holding | null; onDone: () 
           }
           {...form.getInputProps('account_id')}
         />
+        {canPayFromCash && (
+          <Switch
+            label={`Paid from cash in ${selected.name}`}
+            description={
+              payFromCash
+                ? `${money(cashHeld)} available${cost != null ? `; takes ${money(cost)}` : ''}`
+                : 'Leave off for something you already own'
+            }
+            error={shortOfCash ? `Only ${money(cashHeld)} in cash there` : undefined}
+            {...form.getInputProps('pay_from_cash', { type: 'checkbox' })}
+          />
+        )}
         <Textarea label="Notes" autosize minRows={1} {...form.getInputProps('notes')} />
         {existing && (
           <Alert variant="light" color="gray" icon={<IconInfoCircle size={18} />} p="sm">
@@ -980,39 +1223,57 @@ function HoldingForm({ holding, onDone }: { holding: Holding | null; onDone: () 
   );
 }
 
-/** Buy more of a holding or sell some (cash: deposit or withdraw). Sales keep the average cost per share. */
+/**
+ * Buy more of a holding or sell some (cash: deposit or withdraw), on a date. Sales keep the average cost
+ * per share. In an account, a buy can be paid from its cash and a sale's proceeds go into it.
+ */
 function TradeForm({ holding, onDone }: { holding: Holding; onDone: () => void }) {
+  const { data: holdings = [] } = useQuery({ queryKey: ['holdings'], queryFn: api.holdings });
   const cash = holding.asset_type === 'cash';
   const [side, setSide] = useState<TradeInput['side']>('buy');
   // NumberInput reports a string while a number is half typed, so keep both.
   const [qtyInput, setQtyInput] = useState<number | string>('');
   const [priceInput, setPriceInput] = useState<number | string>('');
-  const [errors, setErrors] = useState<{ quantity?: string; price?: string }>({});
+  const [date, setDate] = useState<string | null>(dayjs().format('YYYY-MM-DD'));
+  // null until the switch is touched: then the default for the side applies.
+  const [useCashChoice, setUseCashChoice] = useState<boolean | null>(null);
+  const [errors, setErrors] = useState<{ quantity?: string; price?: string; date?: string }>({});
   const qty = qtyInput === '' ? null : Number(qtyInput);
   const price = priceInput === '' ? null : Number(priceInput);
   const buying = side === 'buy';
-  const needsPrice = buying && !cash && holding.cost_per_unit != null;
   const valid = qty != null && qty > 0;
   const tooMany = !buying && valid && qty > holding.quantity;
   const sellsAll = !buying && qty === holding.quantity;
   const label = cash ? 'cash' : holding.ticker;
 
+  const cashHolding = cashIn(holdings, holding.account_id);
+  const cashHeld = cashHolding?.quantity ?? 0;
+  const canUseCash = !cash && holding.account_id != null;
+  // Sales go to cash by default; buys come out of it when the account has some.
+  const useCash = canUseCash && (useCashChoice ?? (!buying || cashHolding != null));
+  const total = valid && price != null ? Math.round(qty * price * 100) / 100 : null;
+  const shortOfCash = useCash && buying && total != null && total > cashHeld;
+  const gain = !buying && !cash && valid && price != null && holding.cost_per_unit != null ? (price - holding.cost_per_unit) * qty : null;
+
   const trade = useAppMutation(
     (body: TradeInput) => api.tradeHolding(holding.id, body),
     cash
       ? `${buying ? 'Deposited' : 'Withdrew'} ${money(qty ?? 0)}`
-      : `${buying ? 'Bought' : 'Sold'} ${unitsOf(holding, qty ?? 0)} of ${label}${sellsAll ? '; the holding was removed' : ''}`,
+      : `${buying ? 'Bought' : 'Sold'} ${unitsOf(holding, qty ?? 0)} of ${label}${
+          useCash && total != null ? ` (${money(total)} ${buying ? 'from' : 'to'} cash)` : ''
+        }${sellsAll ? '; the holding was removed' : ''}`,
   );
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const found: { quantity?: string; price?: string } = {};
+    const found: { quantity?: string; price?: string; date?: string } = {};
     if (!valid) found.quantity = cash ? 'Enter an amount' : 'Enter a quantity greater than 0';
     else if (tooMany) found.quantity = `You hold ${unitsOf(holding, holding.quantity)}`;
-    if (needsPrice && price == null) found.price = 'Enter the price paid, so the average cost stays accurate';
+    if (!cash && price == null) found.price = buying ? 'Enter the price you paid' : 'Enter the price you sold at';
+    if (!date) found.date = 'Required';
     setErrors(found);
-    if (Object.keys(found).length || qty == null) return;
-    trade.mutate({ side, quantity: qty, price: buying && !cash ? price : null }, { onSuccess: onDone });
+    if (Object.keys(found).length || qty == null || shortOfCash) return;
+    trade.mutate({ side, quantity: qty, price: cash ? null : price, date, use_cash: useCash }, { onSuccess: onDone });
   };
 
   let preview: string | null = null;
@@ -1039,6 +1300,7 @@ function TradeForm({ holding, onDone }: { holding: Holding; onDone: () => void }
           value={side}
           onChange={(v) => {
             setSide(v as TradeInput['side']);
+            setUseCashChoice(null);
             setErrors({});
           }}
           data={[
@@ -1066,10 +1328,10 @@ function TradeForm({ holding, onDone }: { holding: Holding; onDone: () => void }
               )
             }
           />
-          {buying && !cash && (
+          {!cash && (
             <NumberInput
               label={holding.asset_type === 'crypto' ? 'Price per coin' : 'Price per share'}
-              description={needsPrice ? 'What you paid' : 'Optional: no average cost to update'}
+              description={total != null ? `Total ${money(total)}` : buying ? 'What you paid' : 'What you sold at'}
               inputWrapperOrder={['label', 'input', 'description', 'error']}
               placeholder={holding.price != null ? money(holding.price) : undefined}
               prefix="$"
@@ -1082,13 +1344,42 @@ function TradeForm({ holding, onDone }: { holding: Holding; onDone: () => void }
             />
           )}
         </Group>
-        {preview && (
-          <Text size="sm" className="num">
-            {preview}
-          </Text>
+        <DateInput
+          label="Date"
+          valueFormat="MMM D, YYYY"
+          maxDate={dayjs().format('YYYY-MM-DD')}
+          value={date}
+          onChange={setDate}
+          error={errors.date}
+        />
+        {canUseCash && (
+          <Switch
+            label={buying ? `Pay from cash in ${holding.account_name}` : `Add proceeds to cash in ${holding.account_name}`}
+            description={`${money(cashHeld)} in cash there${
+              useCash && total != null && !shortOfCash ? `; ${money(buying ? cashHeld - total : cashHeld + total)} after` : ''
+            }`}
+            error={shortOfCash ? 'Not enough cash: deposit some first, or turn this off' : undefined}
+            checked={useCash}
+            onChange={(e) => setUseCashChoice(e.currentTarget.checked)}
+          />
+        )}
+        {(preview || gain != null) && (
+          <Stack gap={4}>
+            {preview && (
+              <Text size="sm" className="num">
+                {preview}
+              </Text>
+            )}
+            {gain != null && (
+              <Group gap={6}>
+                <Text size="sm">Gain on this sale:</Text>
+                <Delta value={Math.round(gain * 100) / 100} />
+              </Group>
+            )}
+          </Stack>
         )}
         <Group justify="flex-end">
-          <Button type="submit" loading={trade.isPending}>
+          <Button type="submit" loading={trade.isPending} disabled={shortOfCash}>
             {cash ? (buying ? 'Deposit' : 'Withdraw') : buying ? 'Buy' : 'Sell'}
           </Button>
         </Group>

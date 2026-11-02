@@ -23,6 +23,8 @@ services:
     build: ./backend
     restart: unless-stopped
     environment:
+      # The version shown in the sidebar. Keep it the same as deploy/docker-compose.yml.
+      APP_VERSION: "1.0.0"
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tallyvio}:${POSTGRES_PASSWORD:-tallyvio}@db:5432/${POSTGRES_DB:-tallyvio}
       AUTH_MODE: ${AUTH_MODE:-none}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:-}

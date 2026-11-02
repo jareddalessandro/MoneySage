@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     operator_name: str = ""
     contact_email: str = ""
     governing_law: str = ""
+    # Shown in the sidebar; set by APP_VERSION in the compose files.
+    app_version: str = ""
     # Timezone for new households (the container's TZ by default).
     default_timezone: str = os.environ.get("TZ") or "America/Phoenix"
     # Where daily prices come from: "yahoo" (yfinance; no account, personal use) or "tiingo" (TIINGO_API_KEY).

@@ -1,14 +1,25 @@
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import CASH_TICKER, Account, AssetType, Holding, PriceRefreshRun
+from app.models import (
+    CASH_TICKER,
+    Account,
+    AssetType,
+    Holding,
+    InvestmentTransaction,
+    InvestmentTxnKind,
+    PriceRefreshRun,
+)
 from app.routers.balance_sheet import get_account
 from app.schemas import (
+    HoldingCreateIn,
     HoldingIn,
     HoldingOut,
+    InvestmentTransactionOut,
     PortfolioPoint,
     PortfolioSummary,
     RefreshRunOut,
@@ -78,6 +89,59 @@ def buy_more(holding: Holding, quantity: Decimal, price: Decimal | None) -> None
         total = holding.quantity * holding.cost_per_unit + quantity * price
         holding.cost_per_unit = (total / (holding.quantity + quantity)).quantize(Decimal("0.000001"), ROUND_HALF_UP)
     holding.quantity += quantity
+
+
+def _cents(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+
+def move_cash(ctx: HouseholdCtx, account_id: int | None, change: Decimal, switch: str) -> None:
+    """Add to (or take from) the account's cash holding. Taking more than it holds is refused; cash that
+    reaches $0 is removed, like a holding sold in full. `switch` names the form's switch for the error."""
+    if account_id is None:
+        raise HTTPException(400, "This holding isn't in an account, so there's no cash to use")
+    cash = find_position(ctx.db, ctx.household_id, AssetType.cash, CASH_TICKER, account_id)
+    have = cash.quantity if cash else Decimal(0)
+    if have + change < 0:
+        name = get_account(ctx, account_id).name
+        raise HTTPException(
+            400, f'{name} has only ${have:,.2f} in cash. Deposit cash there first, or turn off "{switch}".'
+        )
+    if cash is None:
+        ctx.db.add(
+            Holding(
+                household_id=ctx.household_id, asset_type=AssetType.cash, ticker=CASH_TICKER, quantity=change,
+                account_id=account_id,
+            )
+        )
+    elif have + change == 0:
+        ctx.db.delete(cash)
+    else:
+        cash.quantity = have + change
+
+
+def record(
+    ctx: HouseholdCtx,
+    holding: Holding,
+    kind: InvestmentTxnKind,
+    quantity: Decimal,
+    price: Decimal | None,
+    day: date | None = None,
+    realized_gain: Decimal | None = None,
+    cash_change: Decimal | None = None,
+) -> None:
+    """Add a line to the investment ledger."""
+    if holding.asset_type == AssetType.cash:
+        price, amount = None, _cents(quantity)
+    else:
+        amount = None if price is None else _cents(quantity * price)
+    ctx.db.add(
+        InvestmentTransaction(
+            household_id=ctx.household_id, date=day or ctx.today(), kind=kind, asset_type=holding.asset_type,
+            ticker=holding.ticker, account_id=holding.account_id, quantity=quantity, price=price, amount=amount,
+            realized_gain=realized_gain, cash_change=cash_change,
+        )
+    )
 
 
 def _apply(ctx: HouseholdCtx, holding: Holding, body: HoldingIn) -> None:
@@ -160,11 +224,25 @@ def list_holdings(ctx: HouseholdDep):
 
 
 @router.post("/holdings", response_model=HoldingOut, status_code=201)
-def create_holding(body: HoldingIn, ctx: HouseholdDep):
-    """Add a holding. A ticker already held in that account is bought more of instead of listed twice."""
+def create_holding(body: HoldingCreateIn, ctx: HouseholdDep):
+    """Add a holding. A ticker already held in that account is bought more of instead of listed twice.
+
+    With pay_from_cash the cost comes out of the account's cash holding and it's logged as a buy; otherwise
+    it's logged as an added holding, since it's usually something already owned."""
     db = ctx.db
     holding = Holding(household_id=ctx.household_id)
-    _apply(ctx, holding, body)
+    _apply(ctx, holding, HoldingIn.model_validate(body.model_dump(exclude={"pay_from_cash"})))
+    paid = body.pay_from_cash and holding.asset_type != AssetType.cash
+    cash_change = None
+    if paid:
+        if holding.cost_per_unit is None:
+            raise HTTPException(400, "Enter the price paid per share, so the cost can come out of the account's cash")
+        cash_change = -_cents(holding.quantity * holding.cost_per_unit)
+        move_cash(ctx, holding.account_id, cash_change, "Paid from cash")
+    record(
+        ctx, holding, InvestmentTxnKind.buy if paid else InvestmentTxnKind.add, holding.quantity,
+        holding.cost_per_unit, cash_change=cash_change,
+    )
     existing = find_position(db, ctx.household_id, holding.asset_type, holding.ticker, holding.account_id)
     if existing is None:
         db.add(holding)
@@ -198,17 +276,41 @@ def update_holding(holding_id: int, body: HoldingIn, ctx: HouseholdDep):
 
 @router.post("/holdings/{holding_id}/trade", response_model=HoldingOut | None)
 def trade(holding_id: int, body: TradeIn, ctx: HouseholdDep):
-    """Buy more or sell some. A sale keeps the average cost per share; selling everything removes the
-    holding (and returns null)."""
+    """Buy more or sell some, and log it in the ledger. A sale keeps the average cost per share; selling
+    everything removes the holding (and returns null). With use_cash, a buy is paid from the account's cash
+    holding and a sale's proceeds go into it (ignored when trading the cash itself)."""
     db = ctx.db
     holding = get_holding(ctx, holding_id)
-    remaining: Holding | None = holding
-    if body.side == "buy":
-        buy_more(holding, body.quantity, body.price)
-    elif body.quantity > holding.quantity:
-        unit = "" if holding.asset_type == AssetType.cash else f" {holding.ticker}"
-        amount = f"${holding.quantity:,.2f}" if holding.asset_type == AssetType.cash else _quantity(holding.quantity)
+    cash = holding.asset_type == AssetType.cash
+    buying = body.side == "buy"
+    day = body.date or ctx.today()
+    if day > ctx.today():
+        raise HTTPException(400, "The date can't be in the future")
+    price = None if cash else body.price
+    if price is None and not cash:
+        raise HTTPException(400, f"Enter the price per share you {'paid' if buying else 'sold at'}")
+    if not buying and body.quantity > holding.quantity:
+        unit = "" if cash else f" {holding.ticker}"
+        amount = f"${holding.quantity:,.2f}" if cash else _quantity(holding.quantity)
         raise HTTPException(400, f"That's more than you hold: {amount}{unit}")
+
+    cash_change = None
+    if body.use_cash and not cash:
+        total = _cents(body.quantity * price)
+        cash_change = -total if buying else total
+        move_cash(ctx, holding.account_id, cash_change, "Pay from cash" if buying else "Add proceeds to cash")
+    gain = None
+    if not buying and not cash and holding.cost_per_unit is not None:
+        gain = _cents((price - holding.cost_per_unit) * body.quantity)
+    if cash:
+        kind = InvestmentTxnKind.deposit if buying else InvestmentTxnKind.withdraw
+    else:
+        kind = InvestmentTxnKind.buy if buying else InvestmentTxnKind.sell
+    record(ctx, holding, kind, body.quantity, price, day, gain, cash_change)
+
+    remaining: Holding | None = holding
+    if buying:
+        buy_more(holding, body.quantity, price)
     elif body.quantity == holding.quantity:
         db.delete(holding)
         remaining = None
@@ -227,6 +329,38 @@ def delete_holding(holding_id: int, ctx: HouseholdDep):
     db.flush()
     sync_account_snapshots(db, ctx.household_id)
     db.commit()
+
+
+@router.get("/investment-transactions", response_model=list[InvestmentTransactionOut])
+def list_investment_transactions(ctx: HouseholdDep):
+    """The ledger, newest first."""
+    db = ctx.db
+    account_names = dict(
+        db.execute(select(Account.id, Account.name).where(Account.household_id == ctx.household_id)).all()
+    )
+    rows = db.scalars(
+        select(InvestmentTransaction)
+        .where(InvestmentTransaction.household_id == ctx.household_id)
+        .order_by(InvestmentTransaction.date.desc(), InvestmentTransaction.id.desc())
+    ).all()
+    return [
+        InvestmentTransactionOut(
+            id=t.id, date=t.date, kind=t.kind, asset_type=t.asset_type, ticker=t.ticker, account_id=t.account_id,
+            account_name=account_names.get(t.account_id), quantity=t.quantity, price=t.price, amount=t.amount,
+            realized_gain=t.realized_gain, cash_change=t.cash_change,
+        )
+        for t in rows
+    ]
+
+
+@router.delete("/investment-transactions/{txn_id}", status_code=204)
+def delete_investment_transaction(txn_id: int, ctx: HouseholdDep):
+    """Removes the line only; the holdings and cash stay as they are."""
+    txn = ctx.db.get(InvestmentTransaction, txn_id)
+    if txn is None or txn.household_id != ctx.household_id:
+        raise HTTPException(404, "Ledger entry not found")
+    ctx.db.delete(txn)
+    ctx.db.commit()
 
 
 @router.get("/portfolio/summary", response_model=PortfolioSummary)

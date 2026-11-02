@@ -16,9 +16,11 @@ def accounts_on(monkeypatch):
 def test_site_is_public(client, monkeypatch):
     monkeypatch.setattr(settings, "operator_name", "Jane Doe")
     monkeypatch.setattr(settings, "contact_email", "privacy@example.com")
+    monkeypatch.setattr(settings, "app_version", "1.2.3")
     site = client.get("/api/site").json()
     assert site["operator_name"] == "Jane Doe" and site["contact_email"] == "privacy@example.com"
     assert site["governing_law"] is None and site["terms_version"] == legal.TERMS_VERSION
+    assert site["version"] == "1.2.3"
 
 
 def test_offline_installs_skip_setup(client):
