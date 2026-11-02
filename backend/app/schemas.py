@@ -776,9 +776,52 @@ class MeOut(BaseModel):
     # Signed-in accounts only: first-time setup isn't done, or the current terms haven't been agreed to.
     needs_setup: bool
     needs_terms: bool
+    # Can open the Admin page (ADMIN_EMAILS, signed-in accounts only).
+    is_admin: bool
     # Their own household first, then ones shared with them.
     households: list[HouseholdAccessOut]
     companies: list[CompanyAccessOut]
+
+
+# ---------- Admin ----------
+# Account details only. Nothing here may come from inside a household or company.
+
+class AdminUserOut(BaseModel):
+    id: int
+    email: str
+    name: str | None
+    picture_url: str | None
+    created_at: datetime
+    last_login_at: datetime | None
+    last_seen_at: datetime | None
+    onboarded: bool
+    # Agreed to the current Terms and Privacy Policy.
+    terms_current: bool
+    # Signed-in browsers whose session hasn't expired.
+    active_sessions: int
+    # How many households and companies they can open (own or shared), not what's in them.
+    households: int
+    companies: int
+    is_admin: bool
+
+
+class AdminStatsOut(BaseModel):
+    users: int
+    new_7d: int
+    new_30d: int
+    active_7d: int
+    active_30d: int
+    # Finished first-time setup.
+    onboarded: int
+    households: int
+    companies: int
+    pending_invites: int
+
+
+class AdminOverviewOut(BaseModel):
+    stats: AdminStatsOut
+    # Newest sign-up first.
+    users: list[AdminUserOut]
 
 
 # ---------- Sharing ----------

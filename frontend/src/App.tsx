@@ -10,6 +10,7 @@ import {
   IconReceipt2,
   IconScale,
   IconSettings,
+  IconShieldLock,
   IconTargetArrow,
   IconUsers,
 } from '@tabler/icons-react';
@@ -22,6 +23,7 @@ import { CanEditContext } from './components/common';
 import { householdLabel, PendingInvites } from './components/Sharing';
 import type { Me, Site } from './types';
 
+import AdminPage from './pages/Admin';
 import BalanceSheetPage from './pages/BalanceSheet';
 import BudgetPage from './pages/Budget';
 import CompaniesPage from './pages/Companies';
@@ -46,6 +48,7 @@ const NAV = [
   { to: '/settings', label: 'Categories', icon: IconSettings },
   { to: '/data', label: 'Export & import', icon: IconDatabaseExport },
   { to: '/sharing', label: 'Sharing', icon: IconUsers, accountsOnly: true },
+  { to: '/admin', label: 'Admin', icon: IconShieldLock, adminOnly: true },
 ];
 
 export default function App() {
@@ -111,7 +114,7 @@ function Shell({ me, site }: { me: Me | undefined; site: Site | undefined }) {
   const companyId = /^\/companies\/(\d+)/.exec(pathname)?.[1];
   const viewOnly = companyId
     ? companies.find((c) => c.id === Number(companyId))?.role === 'viewer'
-    : !['/companies', '/sharing', '/privacy', '/terms'].includes(pathname) && household?.role === 'viewer';
+    : !['/companies', '/sharing', '/admin', '/privacy', '/terms'].includes(pathname) && household?.role === 'viewer';
 
   return (
     <AppShell
@@ -133,7 +136,7 @@ function Shell({ me, site }: { me: Me | undefined; site: Site | undefined }) {
         </Group>
         {me && me.households.length > 1 && <HouseholdSwitcher households={me.households} current={household?.id} />}
         <AppShell.Section grow component={ScrollArea} type="scroll">
-        {NAV.filter((item) => accounts || !item.accountsOnly).map(({ to, label, icon: Icon }) => (
+        {NAV.filter((item) => (accounts || !item.accountsOnly) && (me?.is_admin || !item.adminOnly)).map(({ to, label, icon: Icon }) => (
           <Fragment key={to}>
             <NavLink
               component={Link}
@@ -196,7 +199,7 @@ function Shell({ me, site }: { me: Me | undefined; site: Site | undefined }) {
       </AppShell.Navbar>
 
       <AppShell.Main>
-        {accounts && pathname !== '/sharing' && <PendingInvites />}
+        {accounts && pathname !== '/sharing' && pathname !== '/admin' && <PendingInvites />}
         {viewOnly && (
           <Alert variant="light" color="gray" icon={<IconEye size={18} />} mb="xl">
             You have view-only access {companyId ? 'to this company' : `to ${household ? householdLabel(household) : 'this household'}`}:
@@ -218,6 +221,7 @@ function Shell({ me, site }: { me: Me | undefined; site: Site | undefined }) {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/data" element={<DataPage />} />
           <Route path="/sharing" element={<SharingPage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="/privacy" element={<PrivacyPage site={site} signedIn />} />
           <Route path="/terms" element={<TermsPage site={site} signedIn />} />
           <Route path="*" element={<Navigate to="/budget" replace />} />

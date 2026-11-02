@@ -3,6 +3,7 @@ import type {
   AccessRole,
   Account,
   AccountInput,
+  AdminOverview,
   BalanceSheet,
   BudgetItem,
   BudgetItemInput,
@@ -139,6 +140,7 @@ const qs = (params: Record<string, string | number | boolean>) =>
 export const api = {
   me: () => get<Me>('/me'),
   site: () => get<Site>('/site'),
+  adminOverview: () => get<AdminOverview>('/admin/overview'),
   signOut: () => request<void>('POST', '/auth/logout'),
   onboarding: (body: { household_name?: string; timezone?: string; accept_terms: true }) =>
     request<void>('POST', '/onboarding', body),

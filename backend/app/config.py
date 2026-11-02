@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     public_url: str = "http://localhost:5180"
     # Comma-separated emails allowed to sign in (case doesn't matter). Empty lets any Google account in.
     allowed_emails: str = ""
+    # Comma-separated emails who can open the Admin page (sign-ups and last sign-in, never anyone's finances).
+    admin_emails: str = ""
     # A session ends after this many days without use.
     session_days: int = 30
     # Shown on the landing page, Privacy Policy and Terms (who runs this site and how to reach them, and
@@ -56,6 +58,10 @@ class Settings(BaseSettings):
     @property
     def allowed_email_list(self) -> list[str]:
         return [e.strip().lower() for e in self.allowed_emails.split(",") if e.strip()]
+
+    @property
+    def admin_email_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.admin_emails.split(",") if e.strip()]
 
     @property
     def app_database_url(self) -> str:

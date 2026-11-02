@@ -18,7 +18,7 @@ from app.schemas import (
     SiteOut,
     UserOut,
 )
-from app.tenancy import HouseholdDep, UserDep, require_owner
+from app.tenancy import HouseholdDep, UserDep, is_admin, require_owner
 
 router = APIRouter(prefix="/api", tags=["account"])
 
@@ -48,6 +48,7 @@ def me(user: UserDep, db: Session = Depends(get_db)):
         user=UserOut.model_validate(user),
         needs_setup=accounts and user.onboarded_at is None,
         needs_terms=accounts and user.terms_version != TERMS_VERSION,
+        is_admin=is_admin(user),
         households=[
             HouseholdAccessOut(
                 id=h.id, name=h.name, timezone=h.timezone, role=role,
