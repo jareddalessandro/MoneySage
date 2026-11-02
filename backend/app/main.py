@@ -9,6 +9,7 @@ from app.config import settings
 from app.ratelimit import rate_limit
 from app.database import system_session
 from app.routers import (
+    admin,
     auth,
     backup,
     balance_sheet,
@@ -86,7 +87,7 @@ async def require_csrf_header(request: Request, call_next):
 app.middleware("http")(rate_limit)
 
 
-for module in (auth, me, sharing, categories, budget, balance_sheet, transactions, statements, stocks, credit_cards, companies, backup):
+for module in (auth, me, admin, sharing, categories, budget, balance_sheet, transactions, statements, stocks, credit_cards, companies, backup):
     app.include_router(module.router)
 
 

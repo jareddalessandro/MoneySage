@@ -516,9 +516,46 @@ export interface Me {
   /** Signed-in accounts: first-time setup isn't done / the current terms haven't been agreed to. */
   needs_setup: boolean;
   needs_terms: boolean;
+  /** Can open the Admin page (ADMIN_EMAILS). */
+  is_admin: boolean;
   /** Their own household first, then ones shared with them. */
   households: { id: number; name: string; timezone: string; role: AccessRole; owner_name: string | null }[];
   companies: { id: number; name: string; role: AccessRole }[];
+}
+
+/** The Admin page: account details only, never anything inside a household or company. */
+export interface AdminUser {
+  id: number;
+  email: string;
+  name: string | null;
+  picture_url: string | null;
+  created_at: string;
+  last_login_at: string | null;
+  last_seen_at: string | null;
+  onboarded: boolean;
+  /** Agreed to the current Terms and Privacy Policy. */
+  terms_current: boolean;
+  active_sessions: number;
+  /** How many households / companies they can open (own or shared). */
+  households: number;
+  companies: number;
+  is_admin: boolean;
+}
+
+export interface AdminOverview {
+  stats: {
+    users: number;
+    new_7d: number;
+    new_30d: number;
+    active_7d: number;
+    active_30d: number;
+    onboarded: number;
+    households: number;
+    companies: number;
+    pending_invites: number;
+  };
+  /** Newest sign-up first. */
+  users: AdminUser[];
 }
 
 /** Who can open a household or company. Invites are only listed for the owner. */

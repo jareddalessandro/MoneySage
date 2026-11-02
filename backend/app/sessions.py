@@ -51,12 +51,15 @@ def user_for(db: Session, token: str | None) -> tuple[User | None, bool]:
     now = _now()
     if session is None or session.expires_at <= now:
         return None, False
+    user = db.get(User, session.user_id)
     touched = now - session.last_seen_at >= TOUCH_EVERY
     if touched:
         session.last_seen_at = now
         session.expires_at = now + timedelta(days=settings.session_days)
+        if user is not None:
+            user.last_seen_at = now
         db.commit()
-    return db.get(User, session.user_id), touched
+    return user, touched
 
 
 def end(db: Session, token: str | None) -> None:

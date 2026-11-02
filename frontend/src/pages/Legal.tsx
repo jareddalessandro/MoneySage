@@ -108,8 +108,9 @@ export function PrivacyPage({ site, signedIn = false }: { site: Site | undefined
           <b>Sharing details</b>: the email addresses you invite, and who has access to what.
         </List.Item>
         <List.Item>
-          <b>Technical data</b>: a sign-in cookie, the browser you signed in with, and server logs (IP address,
-          time, and the page or action requested) used to keep the service secure and working.
+          <b>Technical data</b>: a sign-in cookie, the browser you signed in with, when you signed up and last signed
+          in or used Tallyvio, and server logs (IP address, time, and the page or action requested) used to keep the
+          service secure and working.
         </List.Item>
       </Items>
       <P>
@@ -134,6 +135,11 @@ export function PrivacyPage({ site, signedIn = false }: { site: Site | undefined
         <List.Item>
           <b>You, and the people you share with.</b> A household and each company are shared separately, only by
           their owner, and only with the people the owner invites, as editors or view-only.
+        </List.Item>
+        <List.Item>
+          <b>Us, to run the service.</b> Our admin page lists each account&apos;s name, email address, profile
+          picture, when it signed up and was last signed in or active, and how many households and companies it can
+          open. It shows nothing you put in Tallyvio.
         </List.Item>
         <List.Item>
           <b>Service providers that run Tallyvio for us</b>, only as needed to do so: our hosting provider (servers

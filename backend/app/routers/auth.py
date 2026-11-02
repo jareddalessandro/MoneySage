@@ -53,7 +53,7 @@ def sign_in(db: Session, identity: GoogleIdentity) -> User:
     user.google_sub = identity.sub
     user.name = identity.name
     user.picture_url = identity.picture
-    user.last_login_at = datetime.now(UTC)
+    user.last_login_at = user.last_seen_at = datetime.now(UTC)
     # Google lets people change their address; take the new one unless another account already has it.
     if user.email != identity.email and db.scalar(select(User.id).where(User.email == identity.email)) is None:
         user.email = identity.email

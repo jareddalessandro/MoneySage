@@ -48,6 +48,11 @@ def get_current_user(request: Request, response: Response, db: Session = Depends
 UserDep = Annotated[User, Depends(get_current_user)]
 
 
+def is_admin(user: User) -> bool:
+    """Can open the Admin page: a signed-in account listed in ADMIN_EMAILS (never the offline local user)."""
+    return settings.auth_mode == "google" and not user.is_local and user.email in settings.admin_email_list
+
+
 def create_household(db: Session, owner: User, name: str = DEFAULT_HOUSEHOLD_NAME) -> Household:
     """A new household owned by `owner`, with the default categories."""
     household = Household(name=name, timezone=settings.default_timezone)

@@ -52,6 +52,8 @@ In `.env`:
   `https://tallyvio.com/api/auth/callback` to the OAuth client. While the consent screen is in **Testing**,
   only the test users you list there can sign in; switch it to **In production** when you open sign-ups.
 - `ALLOWED_EMAILS`: keep it to your family and partner until you're ready for strangers.
+- `ADMIN_EMAILS`: your own Google address, to see the Admin page (how many people signed up and when they
+  were last here; never anyone's finances).
 - `OPERATOR_NAME`, `CONTACT_EMAIL`, `GOVERNING_LAW`: shown on the landing, Privacy and Terms pages.
 - Prices and backups: see the sections below.
 
