@@ -198,6 +198,17 @@ class AssetType(str, enum.Enum):
 CASH_TICKER = "CASH"
 
 
+class InvestmentTxnKind(str, enum.Enum):
+    buy = "buy"
+    sell = "sell"
+    # Cash put into or taken out of an account (trades on a cash holding).
+    deposit = "deposit"
+    withdraw = "withdraw"
+    # A holding typed in with the Add holding form without paying from the account's cash: usually
+    # something already owned, so it isn't called a buy.
+    add = "add"
+
+
 class CompanyEntryKind(str, enum.Enum):
     income = "income"
     expense = "expense"
@@ -401,6 +412,33 @@ class Holding(Base):
         if self.cost_per_unit is None:
             return None
         return (self.quantity * self.cost_per_unit).quantize(Decimal("0.01"))
+
+
+class InvestmentTransaction(Base):
+    """The investment ledger: one row per buy, sell, deposit, withdrawal or added holding.
+
+    A record only: deleting one doesn't change holdings, and editing a holding (a correction) adds none.
+    """
+
+    __tablename__ = "investment_transactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = _household_id()
+    date: Mapped[date] = mapped_column(Date, index=True)
+    kind: Mapped[InvestmentTxnKind] = mapped_column(_enum(InvestmentTxnKind))
+    asset_type: Mapped[AssetType] = mapped_column(_enum(AssetType))
+    ticker: Mapped[str] = mapped_column(String(20))
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("accounts.id", ondelete="SET NULL"))
+    # Shares or coins (dollars for cash).
+    quantity: Mapped[Decimal] = mapped_column(Numeric(24, 8))
+    price: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    # Dollars: quantity x price (the quantity for cash). Null when an added holding had no cost.
+    amount: Mapped[Decimal | None] = mapped_column(MONEY)
+    # Sells of a holding with an average cost: (price - average cost) x quantity.
+    realized_gain: Mapped[Decimal | None] = mapped_column(MONEY)
+    # How much the account's cash holding changed because of this (negative when a buy was paid from it).
+    cash_change: Mapped[Decimal | None] = mapped_column(MONEY)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class PriceQuote(Base):

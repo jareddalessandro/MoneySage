@@ -182,16 +182,16 @@ def test_buying_more_merges_into_the_holding(client, fake_prices):
     assert bought["quantity"] == 400 and bought["cost_per_unit"] == 15.15  # (4,260 + 1,800) / 400
 
     # Selling keeps the average cost; the synced account follows.
-    sold = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "sell", "quantity": 150}).json()
+    sold = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "sell", "quantity": 150, "price": 15}).json()
     assert sold["quantity"] == 250 and sold["cost_per_unit"] == 15.15
     sheet = client.get("/api/balance-sheet", params={"month": format_month(current_month())}).json()
     assert next(r for r in sheet["rows"] if r["account"]["id"] == ira["id"])["balance"] == 250 * 15
 
-    response = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "sell", "quantity": 251})
+    response = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "sell", "quantity": 251, "price": 15})
     assert response.status_code == 400 and "250" in response.json()["detail"]
 
     # Selling everything removes the holding.
-    gone = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "sell", "quantity": 250})
+    gone = client.post(f"/api/holdings/{first['id']}/trade", json={"side": "sell", "quantity": 250, "price": 15})
     assert gone.status_code == 200 and gone.json() is None
     assert [h["id"] for h in client.get("/api/holdings").json()] == [other["id"]]
 

@@ -40,7 +40,8 @@ def build_everything(client, category_id) -> int:
     brokerage = client.post("/api/accounts", json={
         "name": "Brokerage", "kind": "asset", "subtype": "brokerage", "sync_from_holdings": True,
     }).json()["id"]
-    client.post("/api/holdings", json={"asset_type": "cash", "quantity": 2500, "account_id": brokerage})
+    cash = client.post("/api/holdings", json={"asset_type": "cash", "quantity": 2500, "account_id": brokerage})
+    client.post(f"/api/holdings/{cash.json()['id']}/trade", json={"side": "sell", "quantity": 100, "date": "2026-08-03"})
     client.put("/api/income-statement/notes", json={"month": "2026-08", "notes": "Back to school"})
     client.put("/api/income-statement/totals-from", json={"month": "2026-08", "totals_from": "manual"})
     client.post("/api/credit-cards", json={
@@ -76,6 +77,7 @@ def snapshot(client, cid: int) -> dict:
         "budget_summary": client.get("/api/budget/summary").json(),
         "categories": client.get("/api/categories", params={"include_archived": True}).json(),
         "holdings": client.get("/api/holdings").json(),
+        "investment_transactions": client.get("/api/investment-transactions").json(),
         "cards": client.get("/api/credit-cards").json(),
         "company": client.get(f"/api/companies/{cid}").json(),
         "company_summary": client.get(f"/api/companies/{cid}/summary", params={"year": 2026}).json(),

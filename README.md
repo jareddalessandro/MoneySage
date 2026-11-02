@@ -53,17 +53,6 @@ Your data lives in the Docker volume `tallyvio_pgdata`. It survives restarts and
 
 If PowerShell blocks the scripts, run them with `powershell -ExecutionPolicy Bypass -File .\scripts\backup.ps1`. Copy the `backups` folder somewhere off this machine (cloud drive, USB) now and then.
 
-## Coming from MoneySage
-
-Tallyvio used to be called MoneySage. The rename changed the Docker project, so the data volume is now `tallyvio_pgdata`; your old `moneysage_pgdata` volume is left exactly as it was. To bring your data across:
-
-1. Before switching, in the old version: `.\scripts\backup.ps1` (writes `backups\moneysage-<date>.dump`).
-2. Update `.env`: change `POSTGRES_DB`/`POSTGRES_USER`/`POSTGRES_PASSWORD` from `moneysage` to `tallyvio` (or delete those lines to use the defaults).
-3. Switch to the new version and start it: `docker compose up -d --build`.
-4. `.\scripts\restore.ps1 backups\moneysage-<date>.dump`. Database changes apply as the backend restarts.
-
-Export files from MoneySage still import. Once everything checks out you can remove the old volume with `docker volume rm moneysage_pgdata` (keep the backup file).
-
 ## Configuration
 
 Copy `.env.example` to `.env` to change ports, the database password, the refresh time, or the timezone. `TZ` decides which month "today" falls in. It defaults to `America/Phoenix`.

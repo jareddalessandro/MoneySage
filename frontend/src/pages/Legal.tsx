@@ -97,7 +97,7 @@ export function PrivacyPage({ site, signedIn = false }: { site: Site | undefined
           and Google's account ID. We never see your Google password.
         </List.Item>
         <List.Item>
-          <b>What you put in Tallyvio</b>: budgets, transactions, account balances, investment holdings, credit
+          <b>What you put in Tallyvio</b>: budgets, transactions, account balances, investment holdings and trades, credit
           card reference details, company records, notes and categories.
         </List.Item>
         <List.Item>

@@ -21,6 +21,9 @@ HOUSEHOLD_TABLES = [
     "holdings",
     "credit_cards",
 ]
+# Household tables added after the households migration. Each gets its policies from its own migration
+# (household_policies), since that migration only knew the list above.
+LATER_HOUSEHOLD_TABLES = ["investment_transactions"]
 # Tables with a company_id column.
 COMPANY_TABLES = ["company_members", "company_products", "revenue_shares", "company_entries"]
 # Tables scoped through their parent row: table -> (parent table, foreign key column).
@@ -60,6 +63,11 @@ def _policies(table: str, check: str) -> list[str]:
     ]
 
 
+def household_policies(table: str) -> list[str]:
+    """Policies for a household table added later, for its migration."""
+    return _policies(table, "app_household_ok(household_id, {write})")
+
+
 def _parent_check(parent: str) -> str:
     if parent in HOUSEHOLD_TABLES:
         return "app_household_ok(p.household_id, {write})"
@@ -86,6 +94,19 @@ def statements() -> list[str]:
         "CREATE POLICY tenant_delete ON companies FOR DELETE USING (app_company_ok(id, true))",
     ]
     return sql
+
+
+def all_statements() -> list[str]:
+    """Every policy as of now: what the migrations add up to (used to build the test database)."""
+    sql = statements()
+    for table in LATER_HOUSEHOLD_TABLES:
+        sql += household_policies(table)
+    return sql
+
+
+def drop_policies(table: str) -> list[str]:
+    sql = [f"DROP POLICY IF EXISTS {p} ON {table}" for p in ("tenant_read", "tenant_insert", "tenant_update", "tenant_delete")]
+    return sql + [f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY"]
 
 
 def drop_statements() -> list[str]:

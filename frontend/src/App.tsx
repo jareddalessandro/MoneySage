@@ -171,16 +171,25 @@ function Shell({ me, site }: { me: Me | undefined; site: Site | undefined }) {
           </Fragment>
         ))}
         </AppShell.Section>
-        {me?.auth_mode === 'google' && (
+        {(accounts || site?.version) && (
           <AppShell.Section pt="sm">
-            <UserRow user={me.user} />
+            {accounts && me && <UserRow user={me.user} />}
             <Group gap="md" px="sm" pt={6}>
-              <Text component={Link} to="/privacy" size="xs" c="dimmed" onClick={close} className="hit-44">
-                Privacy
-              </Text>
-              <Text component={Link} to="/terms" size="xs" c="dimmed" onClick={close} className="hit-44">
-                Terms
-              </Text>
+              {accounts && (
+                <>
+                  <Text component={Link} to="/privacy" size="xs" c="dimmed" onClick={close} className="hit-44">
+                    Privacy
+                  </Text>
+                  <Text component={Link} to="/terms" size="xs" c="dimmed" onClick={close} className="hit-44">
+                    Terms
+                  </Text>
+                </>
+              )}
+              {site?.version && (
+                <Text size="xs" c="dimmed" ml="auto" className="num" title="Tallyvio version">
+                  v{site.version}
+                </Text>
+              )}
             </Group>
           </AppShell.Section>
         )}

@@ -68,6 +68,7 @@ def site():
         contact_email=settings.contact_email or None,
         governing_law=settings.governing_law or None,
         terms_version=TERMS_VERSION,
+        version=settings.app_version or None,
     )
 
 

@@ -17,6 +17,7 @@ from app.models import (
     RevenueShareBasis,
     DeductionType,
     Frequency,
+    InvestmentTxnKind,
 )
 
 
@@ -374,12 +375,36 @@ class HoldingIn(BaseModel):
     notes: str | None = None
 
 
+class HoldingCreateIn(HoldingIn):
+    # Take the cost (quantity x cost per unit) out of the account's cash holding: a real buy.
+    pay_from_cash: bool = False
+
+
 class TradeIn(BaseModel):
     """Buy more of a holding or sell some of it (for cash: deposit or withdraw dollars)."""
 
     side: Literal["buy", "sell"]
     quantity: Decimal = Field(gt=0, max_digits=24, decimal_places=8)
-    price: Decimal | None = Field(default=None, ge=0, max_digits=20, decimal_places=6)  # per share, buys only
+    price: Decimal | None = Field(default=None, ge=0, max_digits=20, decimal_places=6)  # per share; not for cash
+    # Today (the household's) when left out. (A plain "= None" default would shadow the date type.)
+    date: Annotated[date | None, Field(default=None)]
+    # Buys are paid from the account's cash holding; sale proceeds go into it.
+    use_cash: bool = False
+
+
+class InvestmentTransactionOut(BaseModel):
+    id: int
+    date: date
+    kind: InvestmentTxnKind
+    asset_type: AssetType
+    ticker: str
+    account_id: int | None
+    account_name: str | None
+    quantity: Num
+    price: Num | None
+    amount: Num | None
+    realized_gain: Num | None
+    cash_change: Num | None
 
 
 class HoldingOut(BaseModel):
@@ -836,6 +861,7 @@ class SiteOut(BaseModel):
     contact_email: str | None
     governing_law: str | None
     terms_version: str
+    version: str | None
 
 
 class OnboardingIn(BaseModel):

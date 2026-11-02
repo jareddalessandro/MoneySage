@@ -264,13 +264,40 @@ export interface HoldingInput {
   cost_per_unit: number | null;
   account_id: number | null;
   notes: string | null;
+  /** New holdings only: take the cost out of the account's cash holding (logged as a buy). */
+  pay_from_cash?: boolean;
 }
 
-/** Buy more of a holding or sell some (for cash: deposit or withdraw). `price` is per share, buys only. */
+/** Buy more of a holding or sell some (for cash: deposit or withdraw). `price` is per share, required except for cash. */
 export interface TradeInput {
   side: 'buy' | 'sell';
   quantity: number;
   price: number | null;
+  /** YYYY-MM-DD; today when left out. */
+  date?: string | null;
+  /** Pay a buy from the account's cash, or put a sale's proceeds into it. */
+  use_cash?: boolean;
+}
+
+export type InvestmentTxnKind = 'buy' | 'sell' | 'deposit' | 'withdraw' | 'add';
+
+/** A line in the investment ledger. Deleting one doesn't change holdings. */
+export interface InvestmentTransaction {
+  id: number;
+  date: string;
+  kind: InvestmentTxnKind;
+  asset_type: AssetType;
+  ticker: string;
+  account_id: number | null;
+  account_name: string | null;
+  /** Shares or coins; dollars for cash. */
+  quantity: number;
+  price: number | null;
+  amount: number | null;
+  /** Sells of a holding with an average cost. */
+  realized_gain: number | null;
+  /** How the account's cash changed (negative when a buy was paid from it). */
+  cash_change: number | null;
 }
 
 export interface RefreshRun {
@@ -519,4 +546,6 @@ export interface Site {
   governing_law: string | null;
   /** The date of the current Terms and Privacy Policy, YYYY-MM-DD. */
   terms_version: string;
+  /** APP_VERSION from the compose file, if set. */
+  version: string | null;
 }

@@ -51,7 +51,7 @@ def schema():
         conn.execute(text("DROP SCHEMA public CASCADE"))
         conn.execute(text("CREATE SCHEMA public"))
         Base.metadata.create_all(conn)
-        for statement in rls.statements():
+        for statement in rls.all_statements():
             conn.execute(text(statement))
         if RLS:
             ensure_app_role(conn, os.environ["APP_DB_USER"], os.environ["APP_DB_PASSWORD"])

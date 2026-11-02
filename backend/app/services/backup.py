@@ -41,6 +41,8 @@ from app.models import (
     Holding,
     Household,
     ImportRule,
+    InvestmentTransaction,
+    InvestmentTxnKind,
     MonthSetting,
     PaycheckDeduction,
     RevenueShare,
@@ -129,6 +131,19 @@ class XMonthSetting(BaseModel):
     notes: str | None = None
 
 
+class XInvestmentTransaction(BaseModel):
+    date: date
+    kind: InvestmentTxnKind
+    asset_type: AssetType
+    ticker: str = Field(min_length=1, max_length=20)
+    account_id: int | None = None
+    quantity: Decimal = Field(gt=0, max_digits=24, decimal_places=8)
+    price: Decimal | None = Field(default=None, ge=0, max_digits=20, decimal_places=6)
+    amount: Decimal | None = Money
+    realized_gain: Decimal | None = Money
+    cash_change: Decimal | None = Money
+
+
 class XHousehold(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     timezone: str = Field(max_length=64)
@@ -140,6 +155,7 @@ class XHousehold(BaseModel):
     import_rules: list[XImportRule] = []
     month_settings: list[XMonthSetting] = []
     holdings: list[HoldingIn] = []
+    investment_transactions: list[XInvestmentTransaction] = []
     credit_cards: list[CreditCardIn] = []
 
     @field_validator("timezone")
@@ -248,6 +264,10 @@ def export_household(db: Session, household: Household) -> XHousehold:
             for m in db.scalars(select(MonthSetting).where(MonthSetting.household_id == hid).order_by(MonthSetting.month))
         ],
         holdings=[HoldingIn.model_validate(h, from_attributes=True) for h in rows(Holding)],
+        investment_transactions=[
+            XInvestmentTransaction.model_validate(t, from_attributes=True)
+            for t in rows(InvestmentTransaction, InvestmentTransaction.date)
+        ],
         credit_cards=[CreditCardIn.model_validate(c, from_attributes=True) for c in rows(CreditCard)],
     )
 
@@ -296,7 +316,10 @@ def _ref(mapping: dict[int, int], old: int | None, what: str) -> int | None:
 
 
 def household_is_empty(db: Session, household_id: int) -> bool:
-    scoped = [Account, BudgetItem, Transaction, StatementImport, ImportRule, MonthSetting, Holding, CreditCard]
+    scoped = [
+        Account, BudgetItem, Transaction, StatementImport, ImportRule, MonthSetting, Holding, InvestmentTransaction,
+        CreditCard,
+    ]
     return not any(
         db.scalar(select(exists().where(model.household_id == household_id))) for model in scoped
     )
@@ -395,6 +418,13 @@ def import_household(db: Session, household: Household, data: XHousehold) -> Non
         else:
             holding.ticker = holding.ticker.strip().upper()
         db.add(holding)
+    for t in data.investment_transactions:
+        db.add(
+            InvestmentTransaction(
+                household_id=hid, account_id=_ref(accounts, t.account_id, "account"),
+                **t.model_dump(exclude={"account_id"}),
+            )
+        )
     for c in data.credit_cards:
         db.add(CreditCard(household_id=hid, **c.model_dump()))
     db.flush()
