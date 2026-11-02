@@ -209,10 +209,10 @@ docker compose exec frontend npx tsc --noEmit
 
 ### Production (`deploy/`)
 
-- `deploy/README.md` is the step-by-step for a Lightsail server. `deploy/docker-compose.yml` (project `tallyvio`) runs `db`, `backend` (one uvicorn process, `--proxy-headers`, non-root user 10001, read-only filesystem with a tmpfs `/tmp`, `API_DOCS=false`), `web` (`deploy/web.Dockerfile`: the frontend built by Vite and served by Caddy with HTTPS, security headers incl. a strict CSP, `no-store` on `/api`, SPA fallback) and `backup`. Memory limits fit a 1 GB server with swap. Settings and secrets live in `deploy/.env` (`new-env.sh` creates it with random passwords).
+- `deploy/README.md` is the step-by-step for a Lightsail server. `deploy/docker-compose.yml` (project `tallyvio`) runs `db`, `backend` (one uvicorn process, `--proxy-headers`, non-root user 10001, read-only filesystem with a tmpfs `/tmp`, `API_DOCS=false`), `web` (`deploy/web.Dockerfile`: the frontend built by Vite and served by Caddy with HTTPS, security headers incl. a strict CSP, `no-store` on `/api`, SPA fallback) and `backup`. The images are built on the server (`docker compose build --pull`; the user's VM has 2 GB, which building the frontend needs), never pulled from a registry. Memory limits are for running. Settings and secrets live in `deploy/.env` (`new-env.sh` creates it with random passwords).
 - **CSP:** scripts only from the site; styles allow `'unsafe-inline'` (Mantine); images from the site, `data:` and `lh3.googleusercontent.com` (Google avatars). Adding a third-party script, font, image host or API call means updating the Caddyfile's policy.
 - **Backups** (`deploy/backup/`): daily at `BACKUP_TIME`, `pg_dump | age -r <public key>` to S3-compatible storage, then deletes those older than `BACKUP_KEEP_DAYS` (30, promised by the Privacy Policy). The private key stays with the user.
-- **CI** (`.github/workflows/ci.yml`): backend tests and the frontend build on every PR; on `main`, builds `tallyvio-backend`, `tallyvio-web` and `tallyvio-backup` and pushes them to `ghcr.io/<owner>/`. The server pulls them.
+- **CI** (`.github/workflows/ci.yml`): backend tests and the frontend build on every PR and push to `main`. It publishes no images: the user builds them on the server and chose that over GitHub Container Registry.
 
 ### Tests
 

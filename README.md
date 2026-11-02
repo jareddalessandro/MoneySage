@@ -71,7 +71,7 @@ With `AUTH_MODE=none` the app has no login, so only do this on a home network yo
 
 ## Hosting
 
-[`deploy/README.md`](deploy/README.md) walks through running Tallyvio on a server (AWS Lightsail) with HTTPS, Google sign-in, nightly encrypted backups, and images built by GitHub Actions.
+[`deploy/README.md`](deploy/README.md) walks through running Tallyvio on a server (AWS Lightsail) with HTTPS, Google sign-in, and nightly encrypted backups.
 
 ## Development
 

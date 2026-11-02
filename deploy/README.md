@@ -6,8 +6,8 @@ domain work the same way.
 
 ## What you need
 
-- A **Lightsail instance**: Linux, **Ubuntu 24.04**, the **2 GB** plan (1 GB works with the swap the setup
-  adds, as long as images are built by GitHub Actions rather than on the server).
+- A **Lightsail instance**: Linux, **Ubuntu 24.04**, the **2 GB** plan (the images are built on the server,
+  and building the frontend needs it).
 - The **domain** (tallyvio.com) and access to its DNS settings.
 - A **Google OAuth client** (the same kind as for local testing; see the root `.env.example`).
 - For backups: an **S3 bucket** with an access key, and an **age key pair** (made on your own computer).
@@ -59,26 +59,16 @@ In `.env`:
 
 ## 4. Start
 
-Images are built by GitHub Actions on every push to `main` and published to GitHub Container Registry.
-If the repository is private, so are the images; let the server pull them with a GitHub personal access
-token (classic) that has only the `read:packages` scope:
+The images are built on the server from this checkout. The first build takes a few minutes.
 
 ```sh
-echo <token> | docker login ghcr.io -u <your GitHub username> --password-stdin
-```
-
-Then:
-
-```sh
-docker compose pull
+docker compose build --pull
 docker compose up -d
 docker compose ps            # all four running; db healthy
 docker compose logs -f backend
 ```
 
 Open https://tallyvio.com. The first visit can take a few seconds while Caddy gets the certificate.
-
-On a 2 GB server you can build on the server instead of pulling: `docker compose up -d --build`.
 
 ## 5. Move your data in
 
@@ -91,10 +81,13 @@ Your local install's data belongs to its offline user, so bring it in through yo
 ## Updating
 
 ```sh
-cd ~/tallyvio && git pull            # picks up changes to these deploy files
+cd ~/tallyvio && git pull            # the new code and deploy files
 cd deploy
 docker compose exec backup backup.sh # a fresh backup first
-docker compose pull && docker compose up -d
+docker compose build --pull          # rebuilds the images (--pull also fetches newer base images)
+docker compose pull db               # the newest Postgres 17 patch release
+docker compose up -d                 # restarts whatever changed
+docker image prune -f                # optional: deletes the old images
 ```
 
 Database changes apply automatically when the backend starts.

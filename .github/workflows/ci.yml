@@ -1,5 +1,4 @@
-# Tests on every pull request and push to main; on main, also builds the production images and publishes
-# them to GitHub Container Registry, so the server only pulls them (no building on a small server).
+# Tests on every pull request and push to main. Production images are built on the server, not here.
 name: CI
 
 on:
@@ -47,41 +46,3 @@ jobs:
       - name: Frontend type check and build
         working-directory: frontend
         run: npm ci && npm run build
-
-  images:
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          - name: backend
-            context: backend
-            file: backend/Dockerfile
-          - name: web
-            context: .
-            file: deploy/web.Dockerfile
-          - name: backup
-            context: deploy/backup
-            file: deploy/backup/Dockerfile
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.file }}
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/tallyvio-${{ matrix.name }}:latest
-            ghcr.io/${{ github.repository_owner }}/tallyvio-${{ matrix.name }}:${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
