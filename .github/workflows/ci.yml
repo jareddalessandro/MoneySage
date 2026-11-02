@@ -35,6 +35,9 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: postgresql+psycopg://tallyvio:tallyvio@localhost:5432/tallyvio
+          # Same zone as the containers (docker-compose.yml): tests compare date.today() with the
+          # household's today, which disagree on a UTC runner in the evening.
+          TZ: America/Phoenix
         run: python -m pytest -q
       - uses: actions/setup-node@v4
         with:
