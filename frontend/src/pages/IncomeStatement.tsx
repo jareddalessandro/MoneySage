@@ -108,6 +108,44 @@ function sortTransactions(rows: Transaction[], { key, dir }: TxnSort): Transacti
   return [...rows].sort((a, b) => sign * compare[key](a, b));
 }
 
+/** The Unexpected items card's order: newest entry first (by id, since the card shows no dates) or by amount. */
+type UnexpectedSort = 'newest' | 'largest' | 'smallest';
+const UNEXPECTED_SORT_KEY = 'tallyvio.unexpected-sort';
+
+function loadUnexpectedSort(): UnexpectedSort {
+  try {
+    const saved = localStorage.getItem(UNEXPECTED_SORT_KEY);
+    if (saved === 'newest' || saved === 'largest' || saved === 'smallest') return saved;
+  } catch {
+    /* ignore */
+  }
+  return 'newest';
+}
+
+function saveUnexpectedSort(sort: UnexpectedSort) {
+  try {
+    localStorage.setItem(UNEXPECTED_SORT_KEY, sort);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Equal amounts keep newest first. */
+function sortUnexpected(rows: Transaction[], sort: UnexpectedSort): Transaction[] {
+  const newest = (a: Transaction, b: Transaction) => b.id - a.id;
+  const compare: Record<UnexpectedSort, (a: Transaction, b: Transaction) => number> = {
+    newest,
+    largest: (a, b) => b.amount - a.amount || newest(a, b),
+    smallest: (a, b) => a.amount - b.amount || newest(a, b),
+  };
+  return [...rows].sort(compare[sort]);
+}
+
+/** Description or category, like the Transactions table's search. */
+function matchesSearch(t: Transaction, term: string) {
+  return !term || t.description.toLowerCase().includes(term) || t.category.name.toLowerCase().includes(term);
+}
+
 export default function IncomeStatementPage() {
   const [month, setMonth] = useState(thisMonth);
   const [filter, setFilter] = useState<Filter>('all');
@@ -115,6 +153,8 @@ export default function IncomeStatementPage() {
   const [editing, setEditing] = useState<Editing>(null);
   const [importing, setImporting] = useState(false);
   const [sort, setSort] = useState<TxnSort>(loadTxnSort);
+  const [unexpectedSearch, setUnexpectedSearch] = useState('');
+  const [unexpectedSort, setUnexpectedSort] = useState<UnexpectedSort>(loadUnexpectedSort);
   const [byCategory, setByCategory] = useState(loadByCategory);
 
   const { data: txns = [] } = useQuery({ queryKey: ['transactions', month], queryFn: () => api.transactions(month) });
@@ -152,10 +192,7 @@ export default function IncomeStatementPage() {
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const shown = listed.filter((t) => {
-      if (filter !== 'all' && t.category.kind !== filter) return false;
-      return !term || t.description.toLowerCase().includes(term) || t.category.name.toLowerCase().includes(term);
-    });
+    const shown = listed.filter((t) => (filter === 'all' || t.category.kind === filter) && matchesSearch(t, term));
     return sortTransactions(shown, sort);
   }, [listed, filter, search, sort]);
 
@@ -170,8 +207,13 @@ export default function IncomeStatementPage() {
     <SortableTh label={label} active={sort.key === key} dir={sort.dir} onSort={() => sortBy(key)} {...props} />
   );
 
-  // Newest entry first (by when it was added, not its date: the card doesn't show dates).
-  const unexpected = useMemo(() => txns.filter((t) => t.is_unexpected).sort((a, b) => b.id - a.id), [txns]);
+  const allUnexpected = useMemo(() => txns.filter((t) => t.is_unexpected), [txns]);
+  // One search for both lists (expenses and income), so there's a single field.
+  const unexpectedTerm = unexpectedSearch.trim().toLowerCase();
+  const unexpected = useMemo(
+    () => sortUnexpected(allUnexpected.filter((t) => matchesSearch(t, unexpectedTerm)), unexpectedSort),
+    [allUnexpected, unexpectedTerm, unexpectedSort],
+  );
   // The chart and its totals cover this calendar year only. The trend spans the last 12 months, so it
   // always holds January through now, and each month follows its own totals source (statement or manual).
   const year = thisMonth().slice(0, 4);
@@ -276,6 +318,35 @@ export default function IncomeStatementPage() {
       <Stack gap="lg">
         <SectionCard
           title="Unexpected items"
+          actions={
+            allUnexpected.length > 0 && (
+              <>
+                <TextInput
+                  size="xs"
+                  placeholder="Search"
+                  aria-label="Search unexpected items"
+                  leftSection={<IconSearch size={14} />}
+                  value={unexpectedSearch}
+                  onChange={(e) => setUnexpectedSearch(e.currentTarget.value)}
+                  w={{ base: '100%', xs: 180 }}
+                />
+                <SegmentedControl
+                  size="xs"
+                  aria-label="Sort unexpected items"
+                  value={unexpectedSort}
+                  onChange={(v) => {
+                    setUnexpectedSort(v as UnexpectedSort);
+                    saveUnexpectedSort(v as UnexpectedSort);
+                  }}
+                  data={[
+                    { value: 'newest', label: 'Newest' },
+                    { value: 'largest', label: 'Largest' },
+                    { value: 'smallest', label: 'Smallest' },
+                  ]}
+                />
+              </>
+            )
+          }
         >
           <Editable>
             <QuickUnexpected key={month} month={month} defaults={unexpectedDefaults} />
@@ -283,9 +354,11 @@ export default function IncomeStatementPage() {
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl" verticalSpacing="lg">
             {(['expense', 'income'] as const).map((kind) => (
               <UnexpectedList
-                key={`${kind}-${month}`}
+                // A new search or order starts back on page 1.
+                key={`${kind}-${month}-${unexpectedTerm}-${unexpectedSort}`}
                 kind={kind}
                 items={unexpected.filter((t) => t.category.kind === kind)}
+                searching={unexpectedTerm !== ''}
                 rowActions={rowActions}
               />
             ))}
@@ -830,16 +903,19 @@ function QuickUnexpected({
 }
 
 /** One side of the Unexpected items card (expenses or income): the noted items and their total. How they
-    compare with the budget is in the Budget vs. actual card. */
+    compare with the budget is in the Budget vs. actual card. While searching, `items` are the matches
+    and the total is theirs. */
 const UNEXPECTED_PAGE_SIZE = 8;
 
 function UnexpectedList({
   kind,
   items,
+  searching,
   rowActions,
 }: {
   kind: CategoryKind;
   items: Transaction[];
+  searching: boolean;
   rowActions: (t: Transaction) => ReactNode;
 }) {
   const expenses = kind === 'expense';
@@ -850,7 +926,7 @@ function UnexpectedList({
   const first = (current - 1) * UNEXPECTED_PAGE_SIZE;
   const shown = items.slice(first, first + UNEXPECTED_PAGE_SIZE);
 
-  // A new item lands at the top of the list, so jump back to the first page to show it.
+  // A new item lands at the top of the list (sorted newest first), so jump back to the first page to show it.
   const count = useRef(items.length);
   useEffect(() => {
     if (items.length > count.current) setPage(1);
@@ -864,7 +940,7 @@ function UnexpectedList({
       </Text>
       {items.length === 0 ? (
         <Text size="sm" c="dimmed" py={6}>
-          None noted yet.
+          {searching ? 'No matches.' : 'None noted yet.'}
         </Text>
       ) : (
         <Table verticalSpacing={6}>
@@ -886,7 +962,7 @@ function UnexpectedList({
           </Table.Tbody>
           <Table.Tfoot>
             <Table.Tr>
-              <Table.Th>Total</Table.Th>
+              <Table.Th>{searching ? 'Total of matches' : 'Total'}</Table.Th>
               <Table.Th ta="right" className="num">
                 {money(noted)}
               </Table.Th>
